@@ -97,11 +97,49 @@ def buscar_favoritos_usuario(user_id: str):
         print(f"Erro ao buscar favoritos: {e}")
         return []
 
+def _convert_to_json_serializable(obj):
+    """Converte tipos numpy/pandas para tipos Python nativos serializáveis em JSON."""
+    import json
+    
+    if obj is None:
+        return None
+    
+    # Converte numpy types
+    try:
+        import numpy as np
+        if isinstance(obj, (np.integer, np.int64, np.int32)):
+            return int(obj)
+        if isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass
+    
+    # Converte dicionários recursivamente
+    if isinstance(obj, dict):
+        return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
+    
+    # Converte listas recursivamente
+    if isinstance(obj, list):
+        return [_convert_to_json_serializable(item) for item in obj]
+    
+    # Converte bool nativo do Python (para garantir)
+    if isinstance(obj, bool):
+        return bool(obj)
+    
+    return obj
+
 def adicionar_favorito_db(user_id: str, fav: dict):
     """Adiciona um favorito ao banco de dados relacional."""
     try:
         supabase = get_supabase_client()
         asset_key = fav.get('key')
+        
+        # Converte dados para tipos JSON serializáveis
+        asset_data = _convert_to_json_serializable(fav.get('data'))
         
         # Verifica se já existe
         existing = supabase.table("favorites").select("id").eq("user_id", user_id).eq("asset_key", asset_key).execute()
@@ -111,7 +149,7 @@ def adicionar_favorito_db(user_id: str, fav: dict):
             result = supabase.table("favorites").update({
                 "symbol": fav.get('symbol'),
                 "plataforma": fav.get('plataforma'),
-                "asset_data": fav.get('data')
+                "asset_data": asset_data
             }).eq("user_id", user_id).eq("asset_key", asset_key).execute()
         else:
             # Não existe, insere
@@ -120,7 +158,7 @@ def adicionar_favorito_db(user_id: str, fav: dict):
                 "asset_key": asset_key,
                 "symbol": fav.get('symbol'),
                 "plataforma": fav.get('plataforma'),
-                "asset_data": fav.get('data')
+                "asset_data": asset_data
             }
             result = supabase.table("favorites").insert(data).execute()
         
@@ -130,7 +168,6 @@ def adicionar_favorito_db(user_id: str, fav: dict):
         error_msg = str(e)
         print(f"Erro ao adicionar favorito: {error_msg}")
         print(f"User ID: {user_id}")
-        print(f"Favorito: {fav}")
         print(f"Traceback: {traceback.format_exc()}")
         return False, error_msg
 
