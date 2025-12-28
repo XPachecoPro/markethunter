@@ -417,7 +417,7 @@ Formato:
 Máximo 150 palavras.
 """
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-3-flash-preview',
             contents=prompt
         )
         return response.text
@@ -552,7 +552,7 @@ with tab1:
                     
                     prompt = f"Analise rapidamente e responda APENAS com: OPORTUNIDADE, OBSERVAR ou RISCO + motivo em 10 palavras. {txt}"
                     response = client.models.generate_content(
-                        model='gemini-2.0-flash',
+                        model='gemini-3-flash-preview',
                         contents=prompt
                     )
                     veredito = response.text.strip()[:100]
