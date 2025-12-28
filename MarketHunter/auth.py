@@ -1,4 +1,5 @@
 import streamlit as st
+import hashlib
 from supabase import create_client, Client
 
 # Configurações do Supabase (lendo de st.secrets para segurança)
