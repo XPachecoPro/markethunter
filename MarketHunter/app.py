@@ -315,6 +315,91 @@ st.sidebar.metric("⭐ Favoritos", len(st.session_state.favoritos))
 alertas = carregar_alertas()
 
 # ============================================================================
+# FUNÇÕES AUXILIARES
+# ============================================================================
+
+def enviar_sms(destinatario, mensagem):
+    """
+    Placeholder para envio de SMS. 
+    Para ativar, integre com Twilio, Vonage ou similar.
+    """
+    # Exemplo Twilio (requer pip install twilio):
+    # from twilio.rest import Client
+    # client = Client(ACCOUNT_SID, AUTH_TOKEN)
+    # client.messages.create(body=mensagem, from_='+1234567', to=destinatario)
+    print(f"📱 [SMS Placeholder] Enviando para {destinatario}: {mensagem}")
+
+def get_asset_key(op, plataforma):
+    if "DexScreener" in plataforma:
+        return f"dex_{op.get('pairAddress', op.get('baseToken', {}).get('symbol', 'unknown'))}"
+    elif "Binance" in plataforma:
+        return f"binance_{op.get('symbol', 'unknown')}"
+    else:
+        return f"stock_{op.get('symbol', 'unknown')}"
+
+def is_favorito(op, plataforma):
+    key = get_asset_key(op, plataforma)
+    return any(f.get('key') == key for f in st.session_state.favoritos)
+
+def adicionar_favorito(op, plataforma):
+    key = get_asset_key(op, plataforma)
+    if not is_favorito(op, plataforma):
+        favorito = {
+            'key': key,
+            'data': op,
+            'plataforma': plataforma,
+            'added_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
+            'symbol': op.get('baseToken', {}).get('symbol', op.get('symbol', 'N/A')),
+            'name': op.get('baseToken', {}).get('name', op.get('name', op.get('symbol', 'N/A')))
+        }
+        st.session_state.favoritos.append(favorito)
+        salvar_favoritos_arquivo()  # Salva para o monitor
+        return True
+    return False
+
+def remover_favorito(key):
+    st.session_state.favoritos = [f for f in st.session_state.favoritos if f.get('key') != key]
+    if key in st.session_state.analise_detalhada:
+        del st.session_state.analise_detalhada[key]
+    salvar_favoritos_arquivo()  # Atualiza arquivo
+
+def gerar_analise_detalhada(dados, key, plataforma):
+    if not api_key:
+        return "⚠️ Informe a Gemini API Key."
+    if not genai:
+        return "⚠️ SDK da Google AI não carregado."
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        if "DexScreener" in plataforma:
+            texto = f"Token: {dados.get('baseToken',{}).get('symbol','N/A')}\nLiquidez: ${dados.get('liquidity',{}).get('usd',0):,.0f}\nVolume 24h: ${dados.get('volume',{}).get('h24',0):,.0f}"
+        elif "Binance" in plataforma:
+            texto = f"Par: {dados.get('symbol','N/A')}\nPreço: ${dados.get('price',0):,.4f}\nVolume: {dados.get('vol_ratio',0):.1f}x"
+        else:
+            texto = f"Ação: {dados.get('symbol','N/A')}\nPreço: ${dados.get('price',0):,.2f}\nVolume: {dados.get('vol_ratio',0):.1f}x"
+        
+        prompt = f"""
+Analise este ativo e dê recomendação DETALHADA de COMPRA ou VENDA.
+
+{texto}
+
+Formato:
+## 🎯 RECOMENDAÇÃO: [COMPRAR/VENDER/AGUARDAR]
+## 📊 Análise: [2-3 pontos]
+## ⚠️ Riscos: [2-3 pontos]
+## 💡 Estratégia: Entry, Stop Loss, Take Profit
+
+Máximo 150 palavras.
+"""
+        response = client.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        return f"❌ Erro: {str(e)}"
+
+# ============================================================================
 # MONITOR DE BACKGROUND (THREAD)
 # ============================================================================
 
@@ -400,91 +485,6 @@ mostrar_alertas_dinamicos()
 
 # === TABS PRINCIPAIS ===
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 Scanner", "⭐ Favoritos", "🚨 Alertas", "📰 Notícias"])
-
-# ============================================================================
-# FUNÇÕES AUXILIARES
-# ============================================================================
-
-def enviar_sms(destinatario, mensagem):
-    """
-    Placeholder para envio de SMS. 
-    Para ativar, integre com Twilio, Vonage ou similar.
-    """
-    # Exemplo Twilio (requer pip install twilio):
-    # from twilio.rest import Client
-    # client = Client(ACCOUNT_SID, AUTH_TOKEN)
-    # client.messages.create(body=mensagem, from_='+1234567', to=destinatario)
-    print(f"📱 [SMS Placeholder] Enviando para {destinatario}: {mensagem}")
-
-def get_asset_key(op, plataforma):
-    if "DexScreener" in plataforma:
-        return f"dex_{op.get('pairAddress', op.get('baseToken', {}).get('symbol', 'unknown'))}"
-    elif "Binance" in plataforma:
-        return f"binance_{op.get('symbol', 'unknown')}"
-    else:
-        return f"stock_{op.get('symbol', 'unknown')}"
-
-def is_favorito(op, plataforma):
-    key = get_asset_key(op, plataforma)
-    return any(f.get('key') == key for f in st.session_state.favoritos)
-
-def adicionar_favorito(op, plataforma):
-    key = get_asset_key(op, plataforma)
-    if not is_favorito(op, plataforma):
-        favorito = {
-            'key': key,
-            'data': op,
-            'plataforma': plataforma,
-            'added_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
-            'symbol': op.get('baseToken', {}).get('symbol', op.get('symbol', 'N/A')),
-            'name': op.get('baseToken', {}).get('name', op.get('name', op.get('symbol', 'N/A')))
-        }
-        st.session_state.favoritos.append(favorito)
-        salvar_favoritos_arquivo()  # Salva para o monitor
-        return True
-    return False
-
-def remover_favorito(key):
-    st.session_state.favoritos = [f for f in st.session_state.favoritos if f.get('key') != key]
-    if key in st.session_state.analise_detalhada:
-        del st.session_state.analise_detalhada[key]
-    salvar_favoritos_arquivo()  # Atualiza arquivo
-
-def gerar_analise_detalhada(dados, key, plataforma):
-    if not api_key:
-        return "⚠️ Informe a Gemini API Key."
-    if not genai:
-        return "⚠️ SDK da Google AI não carregado."
-    try:
-        client = genai.Client(api_key=api_key)
-        
-        if "DexScreener" in plataforma:
-            texto = f"Token: {dados.get('baseToken',{}).get('symbol','N/A')}\nLiquidez: ${dados.get('liquidity',{}).get('usd',0):,.0f}\nVolume 24h: ${dados.get('volume',{}).get('h24',0):,.0f}"
-        elif "Binance" in plataforma:
-            texto = f"Par: {dados.get('symbol','N/A')}\nPreço: ${dados.get('price',0):,.4f}\nVolume: {dados.get('vol_ratio',0):.1f}x"
-        else:
-            texto = f"Ação: {dados.get('symbol','N/A')}\nPreço: ${dados.get('price',0):,.2f}\nVolume: {dados.get('vol_ratio',0):.1f}x"
-        
-        prompt = f"""
-Analise este ativo e dê recomendação DETALHADA de COMPRA ou VENDA.
-
-{texto}
-
-Formato:
-## 🎯 RECOMENDAÇÃO: [COMPRAR/VENDER/AGUARDAR]
-## 📊 Análise: [2-3 pontos]
-## ⚠️ Riscos: [2-3 pontos]
-## 💡 Estratégia: Entry, Stop Loss, Take Profit
-
-Máximo 150 palavras.
-"""
-        response = client.models.generate_content(
-            model='gemini-3-flash-preview',
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"❌ Erro: {str(e)}"
 
 # Scanner functions
 def buscar_dados_dexscreener(termo_busca, liq_min, f_max):
