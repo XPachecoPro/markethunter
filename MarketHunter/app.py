@@ -494,7 +494,7 @@ Formato:
 Máximo 150 palavras.
 """
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-3-flash-preview',
             contents=prompt
         )
         return response.text
@@ -1247,7 +1247,7 @@ Responda APENAS no formato:
 Seja preciso e técnico."""
                     
                     response = client.models.generate_content(
-                        model='gemini-2.0-flash',
+                        model='gemini-3-flash-preview',
                         contents=prompt
                     )
                     veredito = response.text.strip()[:200]
@@ -1889,7 +1889,7 @@ Forneça análise DIRETA e TÉCNICA:
 
 Seja direto. Máximo 180 palavras.
 """
-                        response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+                        response = client.models.generate_content(model='gemini-3-flash-preview', contents=prompt)
                         st.markdown(response.text)
                     except Exception as e:
                         st.error(f"Erro: {e}")
