@@ -160,26 +160,29 @@ def mostrar_tela_login():
             st.subheader("Criar nova conta")
             nome_registro = st.text_input("Nome completo", key="registro_nome", placeholder="Seu nome")
             email_registro = st.text_input("Email", key="registro_email", placeholder="seu@email.com")
-            # Campo de telefone com detecção automática de país
-            col_phone, col_flag = st.columns([4, 1])
+            # Campo de telefone com auto-detecção de país
+            col_phone, col_flag = st.columns([5, 1])
             
             with col_phone:
                 telefone_raw = st.text_input(
-                    "📱 Celular (com DDI)", 
+                    "📱 Telefone", 
                     key="registro_telefone", 
                     placeholder="+55 11 99999-9999",
-                    help="Digite o código do país: +55 Brasil, +1 EUA, +351 Portugal..."
+                    help="Digite com o código do país (ex: +55 para Brasil, +1 para EUA)"
                 )
             
-            # Formata e detecta país automaticamente
-            telefone_formatado, pais_code, bandeira = formatar_telefone(telefone_raw if telefone_raw.startswith('+') else telefone_raw)
+            # Auto-detecta país e formata número
+            telefone_formatado, pais_code, bandeira = formatar_telefone(telefone_raw)
             
             with col_flag:
                 st.markdown(f"<div style='font-size: 2.5em; text-align: center; margin-top: 25px;'>{bandeira}</div>", unsafe_allow_html=True)
             
-            # Mostra número formatado
-            if telefone_formatado and telefone_raw:
-                st.success(f"✓ {telefone_formatado}")
+            # Mostra número formatado se válido
+            if telefone_raw:
+                if telefone_formatado and pais_code:
+                    st.success(f"✓ {telefone_formatado} ({pais_code})")
+                elif not telefone_raw.startswith("+"):
+                    st.info("💡 Adicione o código do país: +55 para Brasil, +1 para EUA, +351 para Portugal...")
             
             senha_registro = st.text_input("Senha", type="password", key="registro_senha", placeholder="Mínimo 6 caracteres")
             senha_confirma = st.text_input("Confirme a senha", type="password", key="registro_confirma", placeholder="••••••••")
