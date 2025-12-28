@@ -5,6 +5,8 @@ import streamlit as st
 import requests
 import json
 import os
+import threading
+import time
 from datetime import datetime
 
 # Imports com fallback para cloud
@@ -311,45 +313,90 @@ st.sidebar.metric("⭐ Favoritos", len(st.session_state.favoritos))
 
 # Verifica alertas do monitor
 alertas = carregar_alertas()
-alertas_novos = [a for a in alertas if a.get('timestamp') not in st.session_state.alertas_vistos]
-
-if alertas_novos:
-    st.sidebar.error(f"🚨 {len(alertas_novos)} alertas!")
-else:
-    st.sidebar.success("✓ Monitorando")
 
 # ============================================================================
-# POPUP DE ALERTAS (TOPO DA PÁGINA)
+# MONITOR DE BACKGROUND (THREAD)
 # ============================================================================
 
-if alertas_novos:
-    for alerta in alertas_novos[:3]:  # Mostra até 3 alertas
-        acao = alerta.get('acao', '')
-        symbol = alerta.get('symbol', 'N/A')
-        msg = alerta.get('mensagem', '')
-        
-        if acao == "COMPRAR":
-            st.success(f"""
-            🚨 **ALERTA DE COMPRA - {symbol}**
-            
-            {msg}
-            
-            ⏰ {alerta.get('timestamp', '')}
-            """)
-        elif acao == "VENDER":
-            st.error(f"""
-            🚨 **ALERTA DE VENDA - {symbol}**
-            
-            {msg}
-            
-            ⏰ {alerta.get('timestamp', '')}
-            """)
-        
-        # Marca como visto
-        st.session_state.alertas_vistos.add(alerta.get('timestamp'))
+def monitor_thread_task():
+    """Tarefa executada em background para monitorar favoritos."""
+    from favorites_monitor import atualizar_dados_ativo, analisar_oportunidade, verificar_alerta_urgente, enviar_telegram, salvar_alerta
     
-    if st.button("✓ Marcar alertas como lidos", key="dismiss_alerts"):
-        st.rerun()
+    # Hereda configurações do app
+    monitor_api_key = api_key
+    monitor_tg_token = st.secrets.get("telegram", {}).get("bot_token", "")
+    monitor_tg_id = st.secrets.get("telegram", {}).get("chat_id", "")
+    
+    # Seta variáveis de ambiente para o monitor
+    os.environ["GEMINI_API_KEY"] = monitor_api_key
+    os.environ["TELEGRAM_BOT_TOKEN"] = monitor_tg_token
+    os.environ["TELEGRAM_CHAT_ID"] = monitor_tg_id
+    
+    while True:
+        try:
+            if os.path.exists(FAVORITES_FILE):
+                with open(FAVORITES_FILE, 'r') as f:
+                    favoritos = json.load(f)
+            else:
+                favoritos = []
+            
+            if favoritos:
+                for fav in favoritos:
+                    dados_atuais = atualizar_dados_ativo(fav)
+                    if dados_atuais:
+                        analise = analisar_oportunidade(fav, dados_atuais)
+                        acao, mensagem = verificar_alerta_urgente(analise)
+                        
+                        if acao:
+                            enviar_telegram(f"🚨 *ALERTA DE {acao}!*\n\n📊 *{fav.get('symbol')}*\n{mensagem}")
+                            salvar_alerta({
+                                'symbol': fav.get('symbol'),
+                                'acao': acao,
+                                'mensagem': mensagem,
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'plataforma': fav.get('plataforma', '')
+                            })
+                    time.sleep(2)
+            time.sleep(60)
+        except Exception as e:
+            time.sleep(10)
+
+if 'monitor_running' not in st.session_state:
+    st.session_state.monitor_running = False
+
+if not st.session_state.monitor_running:
+    thread = threading.Thread(target=monitor_thread_task, daemon=True)
+    thread.start()
+    st.session_state.monitor_running = True
+    st.sidebar.info("📡 Scanner Background Ativado")
+
+# ============================================================================
+# POPUP DE ALERTAS (AUTO-REFRESH)
+# ============================================================================
+
+@st.fragment(run_every="30s")
+def mostrar_alertas_dinamicos():
+    alertas = carregar_alertas()
+    alertas_novos = [a for a in alertas if a.get('timestamp') not in st.session_state.alertas_vistos]
+    
+    if alertas_novos:
+        for alerta in alertas_novos[:2]:
+            acao = alerta.get('acao', '')
+            symbol = alerta.get('symbol', 'N/A')
+            msg = alerta.get('mensagem', '')
+            
+            if acao == "COMPRAR":
+                st.success(f"🚀 **COMPRA: {symbol}**\n\n{msg}")
+            else:
+                st.error(f"📉 **VENDA: {symbol}**\n\n{msg}")
+            
+            # Tenta SMS se o usuário tiver telefone (Placeholder)
+            if st.session_state.user.get('telefone'):
+                enviar_sms(st.session_state.user.get('telefone'), f"Eagle Alert {acao}: {symbol}")
+            
+            st.session_state.alertas_vistos.add(alerta.get('timestamp'))
+
+mostrar_alertas_dinamicos()
 
 # === TABS PRINCIPAIS ===
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 Scanner", "⭐ Favoritos", "🚨 Alertas", "📰 Notícias"])
@@ -357,6 +404,17 @@ tab1, tab2, tab3, tab4 = st.tabs(["🎯 Scanner", "⭐ Favoritos", "🚨 Alertas
 # ============================================================================
 # FUNÇÕES AUXILIARES
 # ============================================================================
+
+def enviar_sms(destinatario, mensagem):
+    """
+    Placeholder para envio de SMS. 
+    Para ativar, integre com Twilio, Vonage ou similar.
+    """
+    # Exemplo Twilio (requer pip install twilio):
+    # from twilio.rest import Client
+    # client = Client(ACCOUNT_SID, AUTH_TOKEN)
+    # client.messages.create(body=mensagem, from_='+1234567', to=destinatario)
+    print(f"📱 [SMS Placeholder] Enviando para {destinatario}: {mensagem}")
 
 def get_asset_key(op, plataforma):
     if "DexScreener" in plataforma:
