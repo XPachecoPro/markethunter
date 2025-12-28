@@ -421,6 +421,222 @@ Máximo 150 palavras.
         return f"❌ Erro: {str(e)}"
 
 # ============================================================================
+# ANÁLISE TÉCNICA INTELIGENTE
+# ============================================================================
+
+def calcular_indicadores_tecnicos(df):
+    """
+    Calcula indicadores técnicos: RSI, MACD, Bollinger Bands.
+    Requer DataFrame com coluna 'Close'.
+    """
+    if df is None or len(df) < 30 or 'Close' not in df.columns:
+        return None
+    
+    try:
+        # RSI (14 períodos)
+        delta = df['Close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14, min_periods=1).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14, min_periods=1).mean()
+        rs = gain / loss.replace(0, 0.0001)  # Evita divisão por zero
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        # MACD (12, 26, 9)
+        ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD'] = ema12 - ema26
+        df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+        
+        # Bollinger Bands (20, 2)
+        df['BB_Middle'] = df['Close'].rolling(window=20, min_periods=1).mean()
+        std = df['Close'].rolling(window=20, min_periods=1).std()
+        df['BB_Upper'] = df['BB_Middle'] + 2 * std
+        df['BB_Lower'] = df['BB_Middle'] - 2 * std
+        df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / df['BB_Middle']
+        
+        # SMAs para padrões
+        df['SMA_20'] = df['Close'].rolling(window=20, min_periods=1).mean()
+        df['SMA_50'] = df['Close'].rolling(window=50, min_periods=1).mean()
+        
+        return df
+    except Exception as e:
+        print(f"Erro ao calcular indicadores: {e}")
+        return None
+
+def detectar_padroes(df):
+    """
+    Detecta padrões técnicos relevantes: Golden Cross, Death Cross, RSI Reversal, etc.
+    Retorna lista de padrões encontrados.
+    """
+    if df is None or len(df) < 5:
+        return []
+    
+    padroes = []
+    try:
+        # RSI Oversold Bounce (< 30 voltando acima)
+        if 'RSI' in df.columns and len(df) >= 3:
+            rsi_atual = df['RSI'].iloc[-1]
+            rsi_anterior = df['RSI'].iloc[-2]
+            if rsi_anterior < 30 and rsi_atual > 30:
+                padroes.append("📈 RSI REVERSAL")
+            elif rsi_atual < 30:
+                padroes.append("🟢 OVERSOLD")
+            elif rsi_atual > 70:
+                padroes.append("🔴 OVERBOUGHT")
+        
+        # MACD Crossover
+        if 'MACD' in df.columns and 'MACD_Signal' in df.columns and len(df) >= 3:
+            macd_atual = df['MACD'].iloc[-1]
+            macd_sinal_atual = df['MACD_Signal'].iloc[-1]
+            macd_anterior = df['MACD'].iloc[-2]
+            macd_sinal_anterior = df['MACD_Signal'].iloc[-2]
+            
+            if macd_anterior < macd_sinal_anterior and macd_atual > macd_sinal_atual:
+                padroes.append("🌟 MACD BULLISH CROSS")
+            elif macd_anterior > macd_sinal_anterior and macd_atual < macd_sinal_atual:
+                padroes.append("💀 MACD BEARISH CROSS")
+        
+        # Bollinger Squeeze (baixa volatilidade)
+        if 'BB_Width' in df.columns and len(df) >= 20:
+            bb_width_atual = df['BB_Width'].iloc[-1]
+            bb_width_avg = df['BB_Width'].tail(20).mean()
+            if bb_width_atual < bb_width_avg * 0.6:
+                padroes.append("⚡ VOLATILITY SQUEEZE")
+        
+        # Preço tocando bandas
+        if 'BB_Upper' in df.columns and 'BB_Lower' in df.columns:
+            preco = df['Close'].iloc[-1]
+            upper = df['BB_Upper'].iloc[-1]
+            lower = df['BB_Lower'].iloc[-1]
+            if preco >= upper * 0.98:
+                padroes.append("📍 NEAR UPPER BB")
+            elif preco <= lower * 1.02:
+                padroes.append("📍 NEAR LOWER BB")
+        
+        # Golden Cross / Death Cross (SMA 20 vs SMA 50)
+        if 'SMA_20' in df.columns and 'SMA_50' in df.columns and len(df) >= 3:
+            sma20_atual = df['SMA_20'].iloc[-1]
+            sma50_atual = df['SMA_50'].iloc[-1]
+            sma20_anterior = df['SMA_20'].iloc[-2]
+            sma50_anterior = df['SMA_50'].iloc[-2]
+            
+            if sma20_anterior < sma50_anterior and sma20_atual > sma50_atual:
+                padroes.append("🌟 GOLDEN CROSS")
+            elif sma20_anterior > sma50_anterior and sma20_atual < sma50_atual:
+                padroes.append("💀 DEATH CROSS")
+        
+    except Exception as e:
+        print(f"Erro ao detectar padrões: {e}")
+    
+    return padroes
+
+def calcular_smart_score(indicadores, vol_ratio=1.0, price_momentum=0):
+    """
+    Calcula score inteligente 0-100 baseado em múltiplos critérios técnicos.
+    """
+    score = 50  # Base neutra
+    
+    try:
+        # RSI Contribution (-25 a +25)
+        rsi = indicadores.get('RSI', 50)
+        if rsi < 30:
+            score += 25  # Muito oversold = oportunidade
+        elif rsi < 40:
+            score += 15
+        elif rsi > 70:
+            score -= 25  # Overbought = risco
+        elif rsi > 60:
+            score -= 10
+        
+        # MACD Contribution (-15 a +20)
+        macd = indicadores.get('MACD', 0)
+        macd_signal = indicadores.get('MACD_Signal', 0)
+        macd_hist = indicadores.get('MACD_Hist', 0)
+        
+        if macd > macd_signal:
+            score += 15  # MACD bullish
+            if macd_hist > 0 and indicadores.get('MACD_Hist_prev', 0) < 0:
+                score += 5  # Acabou de cruzar
+        else:
+            score -= 10  # MACD bearish
+        
+        # Volume Contribution (-10 a +15)
+        if vol_ratio > 2.5:
+            score += 15  # Volume muito alto
+        elif vol_ratio > 1.5:
+            score += 10
+        elif vol_ratio > 1.0:
+            score += 5
+        elif vol_ratio < 0.5:
+            score -= 10  # Volume muito baixo
+        
+        # Momentum Contribution (-10 a +10)
+        if price_momentum > 5:
+            score += 10
+        elif price_momentum > 0:
+            score += 5
+        elif price_momentum < -5:
+            score -= 10
+        
+        # Bollinger Position (-10 a +15)
+        bb_pos = indicadores.get('BB_Position', 'middle')
+        if bb_pos == 'lower':
+            score += 15  # Perto da banda inferior = oversold
+        elif bb_pos == 'upper':
+            score -= 10  # Perto da banda superior = overbought
+        
+        # Padrões Bonus/Penalty
+        padroes = indicadores.get('padroes', [])
+        for p in padroes:
+            if 'GOLDEN CROSS' in p or 'RSI REVERSAL' in p or 'MACD BULLISH' in p:
+                score += 10
+            elif 'DEATH CROSS' in p or 'MACD BEARISH' in p:
+                score -= 10
+            elif 'OVERSOLD' in p:
+                score += 5
+            elif 'OVERBOUGHT' in p:
+                score -= 5
+        
+    except Exception as e:
+        print(f"Erro ao calcular smart score: {e}")
+    
+    return max(0, min(100, score))
+
+def extrair_indicadores_resumo(df):
+    """Extrai valores atuais dos indicadores para exibição."""
+    if df is None or len(df) < 1:
+        return {}
+    
+    try:
+        ultimo = df.iloc[-1]
+        preco = ultimo.get('Close', 0)
+        
+        # Posição Bollinger
+        bb_pos = 'middle'
+        if 'BB_Upper' in df.columns and 'BB_Lower' in df.columns:
+            if preco >= ultimo.get('BB_Upper', preco) * 0.98:
+                bb_pos = 'upper'
+            elif preco <= ultimo.get('BB_Lower', preco) * 1.02:
+                bb_pos = 'lower'
+        
+        return {
+            'RSI': ultimo.get('RSI', 50),
+            'MACD': ultimo.get('MACD', 0),
+            'MACD_Signal': ultimo.get('MACD_Signal', 0),
+            'MACD_Hist': ultimo.get('MACD_Hist', 0),
+            'MACD_Hist_prev': df['MACD_Hist'].iloc[-2] if 'MACD_Hist' in df.columns and len(df) > 1 else 0,
+            'BB_Upper': ultimo.get('BB_Upper', 0),
+            'BB_Middle': ultimo.get('BB_Middle', 0),
+            'BB_Lower': ultimo.get('BB_Lower', 0),
+            'BB_Position': bb_pos,
+            'SMA_20': ultimo.get('SMA_20', 0),
+            'SMA_50': ultimo.get('SMA_50', 0),
+            'Close': preco
+        }
+    except:
+        return {}
+
+# ============================================================================
 # MONITOR DE BACKGROUND (THREAD)
 # ============================================================================
 
@@ -602,10 +818,21 @@ def buscar_dados_stocks(vol_threshold, price_max, custom_symbol=None):
     for symbol in watchlist:
         try:
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1mo", interval="1d")
-            if hist.empty or len(hist) < 5: continue
+            hist = ticker.history(period="3mo", interval="1d")  # 3 meses para indicadores
+            if hist.empty or len(hist) < 30: continue
             
-            # Métricas
+            # Calcula indicadores técnicos
+            hist = calcular_indicadores_tecnicos(hist)
+            if hist is None: continue
+            
+            # Detecta padrões
+            padroes = detectar_padroes(hist)
+            
+            # Extrai resumo dos indicadores
+            indicadores = extrair_indicadores_resumo(hist)
+            indicadores['padroes'] = padroes
+            
+            # Métricas básicas
             avg_volume = hist['Volume'].rolling(window=20).mean().iloc[-1]
             current_volume = hist['Volume'].iloc[-1]
             vol_ratio = current_volume / avg_volume if avg_volume > 0 else 0
@@ -613,31 +840,35 @@ def buscar_dados_stocks(vol_threshold, price_max, custom_symbol=None):
             price_change_1d = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
             price_change_5d = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-5]) / hist['Close'].iloc[-5]) * 100 if len(hist) >= 5 else 0
             
-            # SMA para tendência
-            sma_20 = hist['Close'].rolling(20).mean().iloc[-1] if len(hist) >= 20 else hist['Close'].mean()
-            acima_sma = hist['Close'].iloc[-1] > sma_20
+            # Smart Score (0-100)
+            smart_score = calcular_smart_score(indicadores, vol_ratio, price_change_5d)
             
-            # Score de momentum
-            momentum_score = 0
-            if vol_ratio >= 1.5: momentum_score += 1
-            if price_change_1d > 0: momentum_score += 1
-            if price_change_5d > 0: momentum_score += 1
-            if acima_sma: momentum_score += 1
-            
+            # Verifica threshold
             if vol_ratio >= vol_threshold:
                 info = ticker.info
                 candidatos.append({
-                    'symbol': symbol, 'name': info.get('shortName', symbol),
-                    'price': hist['Close'].iloc[-1], 'vol_ratio': vol_ratio,
-                    'price_change': price_change_1d, 'price_change_5d': price_change_5d,
-                    'market_cap': info.get('marketCap', 0), 'acima_sma': acima_sma,
-                    'momentum_score': momentum_score,
+                    'symbol': symbol, 
+                    'name': info.get('shortName', symbol),
+                    'price': hist['Close'].iloc[-1], 
+                    'vol_ratio': vol_ratio,
+                    'price_change': price_change_1d, 
+                    'price_change_5d': price_change_5d,
+                    'market_cap': info.get('marketCap', 0), 
+                    'acima_sma': hist['Close'].iloc[-1] > hist['SMA_20'].iloc[-1],
+                    # Novos campos inteligentes
+                    'smart_score': smart_score,
+                    'rsi': indicadores.get('RSI', 50),
+                    'macd': indicadores.get('MACD', 0),
+                    'macd_signal': indicadores.get('MACD_Signal', 0),
+                    'bb_position': indicadores.get('BB_Position', 'middle'),
+                    'padroes': padroes,
+                    'momentum_score': min(4, len([p for p in padroes if 'BULLISH' in p or 'OVERSOLD' in p or 'GOLDEN' in p or 'RSI REVERSAL' in p])),
                     'url': f"https://finance.yahoo.com/quote/{symbol}"
                 })
         except: continue
     
-    # Ordena por momentum score
-    candidatos.sort(key=lambda x: x.get('momentum_score', 0), reverse=True)
+    # Ordena por Smart Score (mais inteligente que momentum)
+    candidatos.sort(key=lambda x: x.get('smart_score', 0), reverse=True)
     return candidatos
 
 # ============================================================================
@@ -796,20 +1027,45 @@ with tab1:
                     elif "Binance" in plataforma:
                         txt = f"Par: {op.get('symbol','?')}, Preço: ${op.get('price',0):,.4f}, Volume: {op.get('vol_ratio',0):.1f}x média, Volatilidade: {op.get('volatilidade',0):.2f}%"
                     else:
-                        momentum = op.get('momentum_score', 0)
-                        acima_sma = "ACIMA" if op.get('acima_sma', False) else "ABAIXO"
-                        txt = f"Ação: {op.get('symbol','?')}, Preço: ${op.get('price',0):,.2f}, Volume: {op.get('vol_ratio',0):.1f}x, Var 1D: {op.get('price_change',0):.2f}%, Var 5D: {op.get('price_change_5d',0):.2f}%, {acima_sma} da SMA20, Momentum: {momentum}/4"
+                        # Ações - Prompt aprimorado com indicadores técnicos
+                        rsi = op.get('rsi', 50)
+                        macd = op.get('macd', 0)
+                        macd_signal = op.get('macd_signal', 0)
+                        bb_pos = op.get('bb_position', 'middle')
+                        padroes = op.get('padroes', [])
+                        smart_score = op.get('smart_score', 50)
+                        
+                        # Status dos indicadores
+                        rsi_status = 'SOBRECOMPRADO' if rsi > 70 else 'SOBREVENDIDO' if rsi < 30 else 'NEUTRO'
+                        macd_dir = 'BULLISH' if macd > macd_signal else 'BEARISH'
+                        bb_status = 'TOPO BOLLINGER' if bb_pos == 'upper' else 'FUNDO BOLLINGER' if bb_pos == 'lower' else 'MEIO DAS BANDAS'
+                        
+                        txt = f"""Ação: {op.get('symbol','?')}, Preço: ${op.get('price',0):,.2f}
+📊 INDICADORES TÉCNICOS:
+- RSI(14): {rsi:.1f} ({rsi_status})
+- MACD: {macd:.4f} vs Sinal: {macd_signal:.4f} ({macd_dir})
+- Bollinger: {bb_status}
+- Volume: {op.get('vol_ratio',0):.1f}x média
+- Variação 1D: {op.get('price_change',0):.2f}%, 5D: {op.get('price_change_5d',0):.2f}%
+- Smart Score: {smart_score}/100
+- Padrões: {', '.join(padroes) if padroes else 'Nenhum'}"""
                     
-                    prompt = f"""Você é um analista quantitativo. Analise este ativo de forma DIRETA:
+                    prompt = f"""Você é um analista quantitativo profissional. Analise este ativo:
 
 {txt}
 
+⚡ REGRAS DE DECISÃO:
+- COMPRAR: RSI < 35 OU padrão bullish (Golden Cross, RSI Reversal, MACD Bullish) OU Smart Score > 70
+- EVITAR: RSI > 70 OU padrão bearish (Death Cross, MACD Bearish) OU Smart Score < 30
+- AGUARDAR: Sinais mistos ou neutros
+
 Responda APENAS no formato:
 [SINAL]: COMPRAR | AGUARDAR | EVITAR
-[FORÇA]: 1-10
-[MOTIVO]: máximo 15 palavras
+[FORÇA]: 1-10 (baseado na convergência dos indicadores)
+[MOTIVO]: máximo 20 palavras citando indicadores específicos
+[RISCO]: BAIXO | MÉDIO | ALTO
 
-Seja preciso. Zero rodeios."""
+Seja preciso e técnico."""
                     
                     response = client.models.generate_content(
                         model='gemini-3-flash-preview',
@@ -930,8 +1186,39 @@ Seja preciso. Zero rodeios."""
                         st.write(f"Volume: {op.get('vol_ratio',0):.1f}x | Vol: {op.get('volatilidade',0):.2f}%")
                         st.write(f"🔗 [Binance]({op.get('url','#')})")
                     else:
+                        # === STOCKS - Display com indicadores técnicos ===
                         st.write(f"**{op.get('name', op.get('symbol', 'N/A'))}** | ${op.get('price', 0):,.2f}")
-                        st.write(f"Volume: {op.get('vol_ratio', 0):.1f}x média")
+                        
+                        # Mini-cards com indicadores
+                        ind_col1, ind_col2, ind_col3, ind_col4 = st.columns(4)
+                        
+                        with ind_col1:
+                            rsi = op.get('rsi', 50)
+                            rsi_icon = "🟢" if rsi < 40 else "🔴" if rsi > 60 else "🟡"
+                            st.metric("RSI", f"{rsi:.0f}", delta=rsi_icon)
+                        
+                        with ind_col2:
+                            macd = op.get('macd', 0)
+                            macd_signal = op.get('macd_signal', 0)
+                            macd_dir = "↗️ BULL" if macd > macd_signal else "↘️ BEAR"
+                            st.metric("MACD", f"{macd:.4f}", delta=macd_dir)
+                        
+                        with ind_col3:
+                            smart = op.get('smart_score', 50)
+                            smart_icon = "🔥" if smart > 70 else "⚠️" if smart < 30 else "📊"
+                            st.metric("Smart", f"{smart}/100", delta=smart_icon)
+                        
+                        with ind_col4:
+                            vol = op.get('vol_ratio', 1)
+                            vol_icon = "📈" if vol > 1.5 else "📉"
+                            st.metric("Volume", f"{vol:.1f}x", delta=vol_icon)
+                        
+                        # Padrões detectados
+                        padroes = op.get('padroes', [])
+                        if padroes:
+                            st.info(f"🎯 **Padrões:** {' | '.join(padroes)}")
+                        
+                        # Link
                         st.write(f"🔗 [Yahoo Finance]({op.get('url', '#')})")
                 
                 with col2:
