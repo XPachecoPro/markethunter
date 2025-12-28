@@ -555,28 +555,70 @@ def buscar_dados_binance(vol_threshold, vol_max):
         except: continue
     return candidatos
 
-def buscar_dados_stocks(vol_threshold, price_max):
-    watchlist = ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "META", "NVDA", "AMD",
-                 "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA"]
+def buscar_dados_stocks(vol_threshold, price_max, custom_symbol=None):
+    # Watchlist expandida: EUA, Brasil, ETFs
+    watchlist = [
+        # Big Tech
+        "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "META", "NVDA", "AMD", "NFLX", "ORCL",
+        # Semicondutores
+        "INTC", "QCOM", "AVGO", "MU", "ASML",
+        # Financeiro EUA
+        "JPM", "BAC", "GS", "V", "MA",
+        # Energia
+        "XOM", "CVX", "COP",
+        # Brasil
+        "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "B3SA3.SA", "WEGE3.SA", "RENT3.SA", 
+        "MGLU3.SA", "BBAS3.SA", "ABEV3.SA", "SUZB3.SA", "JBSS3.SA", "ELET3.SA",
+        # ETFs
+        "SPY", "QQQ", "IWM", "BOVA11.SA", "SMAL11.SA"
+    ]
+    
+    # Adiciona símbolo customizado se fornecido
+    if custom_symbol and custom_symbol.strip():
+        symbol_upper = custom_symbol.strip().upper()
+        if symbol_upper not in watchlist:
+            watchlist.insert(0, symbol_upper)
+    
     candidatos = []
     for symbol in watchlist:
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="1mo", interval="1d")
             if hist.empty or len(hist) < 5: continue
+            
+            # Métricas
             avg_volume = hist['Volume'].rolling(window=20).mean().iloc[-1]
             current_volume = hist['Volume'].iloc[-1]
-            price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
             vol_ratio = current_volume / avg_volume if avg_volume > 0 else 0
+            
+            price_change_1d = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
+            price_change_5d = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-5]) / hist['Close'].iloc[-5]) * 100 if len(hist) >= 5 else 0
+            
+            # SMA para tendência
+            sma_20 = hist['Close'].rolling(20).mean().iloc[-1] if len(hist) >= 20 else hist['Close'].mean()
+            acima_sma = hist['Close'].iloc[-1] > sma_20
+            
+            # Score de momentum
+            momentum_score = 0
+            if vol_ratio >= 1.5: momentum_score += 1
+            if price_change_1d > 0: momentum_score += 1
+            if price_change_5d > 0: momentum_score += 1
+            if acima_sma: momentum_score += 1
+            
             if vol_ratio >= vol_threshold:
                 info = ticker.info
                 candidatos.append({
                     'symbol': symbol, 'name': info.get('shortName', symbol),
                     'price': hist['Close'].iloc[-1], 'vol_ratio': vol_ratio,
-                    'price_change': price_change, 'market_cap': info.get('marketCap', 0),
+                    'price_change': price_change_1d, 'price_change_5d': price_change_5d,
+                    'market_cap': info.get('marketCap', 0), 'acima_sma': acima_sma,
+                    'momentum_score': momentum_score,
                     'url': f"https://finance.yahoo.com/quote/{symbol}"
                 })
         except: continue
+    
+    # Ordena por momentum score
+    candidatos.sort(key=lambda x: x.get('momentum_score', 0), reverse=True)
     return candidatos
 
 # ============================================================================
@@ -615,16 +657,28 @@ with tab1:
             c1, c2 = st.columns(2)
             volume_mult = c1.slider("Volume Mín (x)", 0.5, 10.0, 1.0)
             volatilidade_max = c2.slider("Volatilidade Máx (%)", 1.0, 20.0, 10.0)
+            busca_customizada = st.text_input("🔍 Buscar par específico (ex: BTCUSDT)", placeholder="Deixe vazio para varrer todos")
         else:
             c1, c2 = st.columns(2)
             volume_mult = c1.slider("Volume Mín (x)", 0.5, 5.0, 1.0)
             preco_max_var = c2.slider("Variação Máx (%)", 1.0, 20.0, 10.0)
+            busca_customizada = st.text_input("🔍 Buscar ativo específico (ex: AAPL, PETR4.SA)", placeholder="Deixe vazio para usar watchlist")
+    
+    # Campo de busca para DexScreener também
+    if plataforma == "Cripto (DexScreener)":
+        busca_token = st.text_input("🔍 Buscar token específico (endereço ou nome)", placeholder="Deixe vazio para varrer a rede")
+    else:
+        busca_token = ""
 
     if st.button("🚀 Iniciar Scanner + Análise IA", type="primary"):
         with st.spinner(f"Varrendo {plataforma}..."):
             if plataforma == "Cripto (DexScreener)":
                 from dex_scanner import scan_dexscreener
-                raw_oportunidades = scan_dexscreener(chain_id, liquidez_min, fdv_max)
+                if busca_token and busca_token.strip():
+                    # Busca direta por token
+                    raw_oportunidades = scan_dexscreener(busca_token.strip(), liquidez_min, fdv_max)
+                else:
+                    raw_oportunidades = scan_dexscreener(chain_id, liquidez_min, fdv_max)
                 
                 # Auto-salva gemas identificadas
                 if auto_save_gems and raw_oportunidades:
@@ -638,39 +692,53 @@ with tab1:
             elif plataforma == "Cripto (Binance)":
                 raw_oportunidades = buscar_dados_binance(volume_mult, volatilidade_max)
             else:
-                raw_oportunidades = buscar_dados_stocks(volume_mult, preco_max_var)
+                raw_oportunidades = buscar_dados_stocks(volume_mult, preco_max_var, busca_customizada)
         
         # Análise IA automática para cada resultado
         if raw_oportunidades and api_key and genai:
-            st.info(f"🧠 Analisando {len(raw_oportunidades[:10])} ativos com IA...")
+            st.info(f"🧠 Analisando {len(raw_oportunidades[:15])} ativos com IA...")
             progress = st.progress(0)
             
             client = genai.Client(api_key=api_key)
             
             analisados = []
-            for i, op in enumerate(raw_oportunidades[:10]):  # Limita a 10 para não sobrecarregar
-                progress.progress((i + 1) / len(raw_oportunidades[:10]))
+            for i, op in enumerate(raw_oportunidades[:15]):  # Aumentado para 15
+                progress.progress((i + 1) / len(raw_oportunidades[:15]))
                 
                 try:
-                    # Monta texto do ativo
+                    # Monta texto do ativo com dados relevantes
                     if "DexScreener" in plataforma:
-                        txt = f"Token {op.get('baseToken',{}).get('symbol','?')}, Liq ${op.get('liquidity',{}).get('usd',0):,.0f}, FDV ${op.get('fdv',0):,.0f}, Vol 24h ${op.get('volume',{}).get('h24',0):,.0f}"
+                        liq = op.get('liquidity', 0) if isinstance(op.get('liquidity'), (int, float)) else op.get('liquidity', {}).get('usd', 0)
+                        vol = op.get('vol_anomaly', 0)
+                        txt = f"Token: {op.get('symbol', '?')}, Rede: {op.get('chain', '?')}, Liquidez: ${liq:,.0f}, Vol Anomaly: {vol:.1f}x, Motivo: {op.get('reason', 'N/A')[:100]}"
                     elif "Binance" in plataforma:
-                        txt = f"Par {op.get('symbol','?')}, Preço ${op.get('price',0):,.4f}, Volume {op.get('vol_ratio',0):.1f}x média"
+                        txt = f"Par: {op.get('symbol','?')}, Preço: ${op.get('price',0):,.4f}, Volume: {op.get('vol_ratio',0):.1f}x média, Volatilidade: {op.get('volatilidade',0):.2f}%"
                     else:
-                        txt = f"Ação {op.get('symbol','?')}, Preço ${op.get('price',0):,.2f}, Volume {op.get('vol_ratio',0):.1f}x média"
+                        momentum = op.get('momentum_score', 0)
+                        acima_sma = "ACIMA" if op.get('acima_sma', False) else "ABAIXO"
+                        txt = f"Ação: {op.get('symbol','?')}, Preço: ${op.get('price',0):,.2f}, Volume: {op.get('vol_ratio',0):.1f}x, Var 1D: {op.get('price_change',0):.2f}%, Var 5D: {op.get('price_change_5d',0):.2f}%, {acima_sma} da SMA20, Momentum: {momentum}/4"
                     
-                    prompt = f"Analise rapidamente e responda APENAS com: OPORTUNIDADE, OBSERVAR ou RISCO + motivo em 10 palavras. {txt}"
+                    prompt = f"""Você é um analista quantitativo. Analise este ativo de forma DIRETA:
+
+{txt}
+
+Responda APENAS no formato:
+[SINAL]: COMPRAR | AGUARDAR | EVITAR
+[FORÇA]: 1-10
+[MOTIVO]: máximo 15 palavras
+
+Seja preciso. Zero rodeios."""
+                    
                     response = client.models.generate_content(
                         model='gemini-3-flash-preview',
                         contents=prompt
                     )
-                    veredito = response.text.strip()[:100]
+                    veredito = response.text.strip()[:150]
                     
-                    # Classifica para ordenar
-                    if "OPORTUNIDADE" in veredito.upper():
+                    # Classifica para ordenar (novo formato)
+                    if "COMPRAR" in veredito.upper():
                         score = 3
-                    elif "OBSERVAR" in veredito.upper():
+                    elif "AGUARDAR" in veredito.upper():
                         score = 2
                     else:
                         score = 1
