@@ -160,54 +160,24 @@ def mostrar_tela_login():
             st.subheader("Criar nova conta")
             nome_registro = st.text_input("Nome completo", key="registro_nome", placeholder="Seu nome")
             email_registro = st.text_input("Email", key="registro_email", placeholder="seu@email.com")
-            # Campo de telefone com seletor de país
-            st.markdown("##### 📱 Telefone")
-            col_country, col_phone, col_flag = st.columns([1.5, 3, 0.5])
-            
-            # Lista de países com código
-            paises_opcoes = {
-                "🇧🇷 Brasil (+55)": "+55",
-                "🇺🇸 EUA (+1)": "+1",
-                "🇵🇹 Portugal (+351)": "+351",
-                "🇪🇸 Espanha (+34)": "+34",
-                "🇬🇧 Reino Unido (+44)": "+44",
-                "🇦🇷 Argentina (+54)": "+54",
-                "🇨🇱 Chile (+56)": "+56",
-                "🇨🇴 Colômbia (+57)": "+57",
-                "🇲🇽 México (+52)": "+52",
-                "🇩🇪 Alemanha (+49)": "+49",
-                "🇫🇷 França (+33)": "+33",
-                "🇮🇹 Itália (+39)": "+39",
-                "🇯🇵 Japão (+81)": "+81",
-            }
-            
-            with col_country:
-                pais_selecionado = st.selectbox(
-                    "País",
-                    options=list(paises_opcoes.keys()),
-                    index=0,  # Brasil como padrão
-                    key="registro_pais",
-                    label_visibility="collapsed"
-                )
-                codigo_pais = paises_opcoes[pais_selecionado]
+            # Campo de telefone com detecção automática de país
+            col_phone, col_flag = st.columns([4, 1])
             
             with col_phone:
                 telefone_raw = st.text_input(
-                    "Número", 
+                    "📱 Celular (com DDI)", 
                     key="registro_telefone", 
-                    placeholder="11 99999-9999",
-                    label_visibility="collapsed"
+                    placeholder="+55 11 99999-9999",
+                    help="Digite o código do país: +55 Brasil, +1 EUA, +351 Portugal..."
                 )
             
-            # Combina código do país com número
-            numero_completo = codigo_pais + telefone_raw.replace(" ", "").replace("-", "")
-            
-            # Formata e exibe bandeira
-            telefone_formatado, pais_code, bandeira = formatar_telefone(numero_completo)
+            # Formata e detecta país automaticamente
+            telefone_formatado, pais_code, bandeira = formatar_telefone(telefone_raw if telefone_raw.startswith('+') else telefone_raw)
             
             with col_flag:
-                st.markdown(f"<div style='font-size: 2em; text-align: center; margin-top: 5px;'>{bandeira}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 2.5em; text-align: center; margin-top: 25px;'>{bandeira}</div>", unsafe_allow_html=True)
             
+            # Mostra número formatado
             if telefone_formatado and telefone_raw:
                 st.success(f"✓ {telefone_formatado}")
             
