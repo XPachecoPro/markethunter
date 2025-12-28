@@ -790,8 +790,17 @@ Seja preciso. Zero rodeios."""
                 
                 with col1:
                     if plataforma == "Cripto (DexScreener)":
-                        st.write(f"**{op.get('baseToken',{}).get('name','N/A')}** | {op.get('dexId','N/A')}")
-                        st.write(f"Liquidez: ${op.get('liquidity',{}).get('usd',0):,.0f}")
+                        # Nome do token
+                        token_name = op.get('name', op.get('baseToken', {}).get('name', 'N/A')) if isinstance(op.get('baseToken'), dict) else op.get('symbol', 'N/A')
+                        st.write(f"**{token_name}** | {op.get('dex', op.get('dexId', 'N/A'))}")
+                        
+                        # Liquidez - handle both dict and number formats
+                        liq = op.get('liquidity', 0)
+                        if isinstance(liq, dict):
+                            liq_value = liq.get('usd', 0)
+                        else:
+                            liq_value = liq if liq else 0
+                        st.write(f"Liquidez: ${liq_value:,.0f}")
                         st.write(f"🔗 [DexScreener]({op.get('url','#')})")
                     elif plataforma == "Cripto (Binance)":
                         st.write(f"**{op.get('symbol','N/A')}** | ${op.get('price',0):,.4f}")
