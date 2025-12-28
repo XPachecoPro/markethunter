@@ -348,9 +348,14 @@ def adicionar_favorito(op, plataforma):
             'added_at': datetime.now().strftime("%Y-%m-%d %H:%M")
         }
         if st.session_state.user:
-            if adicionar_favorito_db(st.session_state.user['id'], favorito):
+            sucesso = adicionar_favorito_db(st.session_state.user['id'], favorito)
+            if sucesso:
                 st.session_state.favoritos.append(favorito)
+                st.toast(f"⭐ {favorito['symbol']} adicionado aos favoritos!")
                 return True
+            else:
+                st.error("❌ Erro ao salvar favorito. Verifique se a tabela 'favorites' existe no Supabase.")
+                return False
     return False
 
 def remover_favorito(key):
