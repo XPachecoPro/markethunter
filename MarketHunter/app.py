@@ -374,7 +374,19 @@ def gerar_analise_detalhada(dados, key, plataforma):
         client = genai.Client(api_key=api_key)
         
         if "DexScreener" in plataforma:
-            texto = f"Token: {dados.get('baseToken',{}).get('symbol','N/A')}\nLiquidez: ${dados.get('liquidity',{}).get('usd',0):,.0f}\nVolume 24h: ${dados.get('volume',{}).get('h24',0):,.0f}"
+            # Handle liquidity - can be dict or number
+            liq = dados.get('liquidity', 0)
+            liq_value = liq.get('usd', 0) if isinstance(liq, dict) else (liq if liq else 0)
+            
+            # Handle volume - can be dict or number
+            vol = dados.get('volume', 0)
+            vol_value = vol.get('h24', 0) if isinstance(vol, dict) else (vol if vol else 0)
+            
+            # Handle symbol - can be in baseToken or direct
+            token_info = dados.get('baseToken', {})
+            symbol = token_info.get('symbol', dados.get('symbol', 'N/A')) if isinstance(token_info, dict) else dados.get('symbol', 'N/A')
+            
+            texto = f"Token: {symbol}\nLiquidez: ${liq_value:,.0f}\nVolume 24h: ${vol_value:,.0f}"
         elif "Binance" in plataforma:
             texto = f"Par: {dados.get('symbol','N/A')}\nPreço: ${dados.get('price',0):,.4f}\nVolume: {dados.get('vol_ratio',0):.1f}x"
         else:
