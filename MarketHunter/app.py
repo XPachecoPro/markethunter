@@ -9,9 +9,11 @@ from datetime import datetime
 
 # Imports com fallback para cloud
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 except ImportError:
     genai = None
+    types = None
 
 try:
     import pandas as pd
@@ -389,9 +391,10 @@ def remover_favorito(key):
 def gerar_analise_detalhada(dados, key, plataforma):
     if not api_key:
         return "⚠️ Informe a Gemini API Key."
+    if not genai:
+        return "⚠️ SDK da Google AI não carregado."
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        client = genai.Client(api_key=api_key)
         
         if "DexScreener" in plataforma:
             texto = f"Token: {dados.get('baseToken',{}).get('symbol','N/A')}\nLiquidez: ${dados.get('liquidity',{}).get('usd',0):,.0f}\nVolume 24h: ${dados.get('volume',{}).get('h24',0):,.0f}"
@@ -413,7 +416,10 @@ Formato:
 
 Máximo 150 palavras.
 """
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt
+        )
         return response.text
     except Exception as e:
         return f"❌ Erro: {str(e)}"
@@ -525,12 +531,11 @@ with tab1:
                 raw_oportunidades = buscar_dados_stocks(volume_mult, preco_max_var)
         
         # Análise IA automática para cada resultado
-        if raw_oportunidades and api_key:
+        if raw_oportunidades and api_key and genai:
             st.info(f"🧠 Analisando {len(raw_oportunidades[:10])} ativos com IA...")
             progress = st.progress(0)
             
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.0-flash')
+            client = genai.Client(api_key=api_key)
             
             analisados = []
             for i, op in enumerate(raw_oportunidades[:10]):  # Limita a 10 para não sobrecarregar
@@ -546,7 +551,10 @@ with tab1:
                         txt = f"Ação {op.get('symbol','?')}, Preço ${op.get('price',0):,.2f}, Volume {op.get('vol_ratio',0):.1f}x média"
                     
                     prompt = f"Analise rapidamente e responda APENAS com: OPORTUNIDADE, OBSERVAR ou RISCO + motivo em 10 palavras. {txt}"
-                    response = model.generate_content(prompt)
+                    response = client.models.generate_content(
+                        model='gemini-2.0-flash',
+                        contents=prompt
+                    )
                     veredito = response.text.strip()[:100]
                     
                     # Classifica para ordenar
