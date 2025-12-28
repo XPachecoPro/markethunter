@@ -1,5 +1,11 @@
-streamlit
-pandas
-gspread
-oauth2client
-plotly
+streamlit>=1.52.0
+pandas>=2.0.0
+requests>=2.31.0
+google-generativeai>=0.8.0
+ccxt>=4.0.0
+yfinance>=0.2.0
+feedparser>=6.0.0
+phonenumbers>=8.13.0
+supabase>=2.0.0
+gspread>=5.0.0
+oauth2client>=4.1.0

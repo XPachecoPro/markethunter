@@ -1,0 +1,48 @@
+# Ambientes virtuais
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Arquivos de credenciais
+credentials.json
+*.pem
+*.key
+.env
+.env.local
+.env.production
+
+# Dados locais
+users_data.json
+favorites_data.json
+alerts_data.json
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Vercel
+.vercel/
+
+# Streamlit
+.streamlit/secrets.toml
