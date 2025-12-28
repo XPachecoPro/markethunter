@@ -41,6 +41,22 @@ except ImportError:
     print("❌ Erro: sniper_logic.py não encontrado!")
     sys.exit(1)
 
+# Importa scanner de ações
+try:
+    from stock_scanner import scan_stocks, WATCHLIST_BRASIL, WATCHLIST_EUA
+    STOCKS_AVAILABLE = True
+except ImportError:
+    print("⚠️ stock_scanner.py não encontrado, ações desabilitadas")
+    STOCKS_AVAILABLE = False
+
+# Importa analisador de risco IA
+try:
+    from ai_risk_analyzer import analisar_oportunidade_ia, format_risk_for_telegram
+    AI_RISK_AVAILABLE = True
+except ImportError:
+    print("⚠️ ai_risk_analyzer.py não encontrado, análise IA desabilitada")
+    AI_RISK_AVAILABLE = False
+
 # ============================================================================
 # CONFIGURAÇÃO
 # ============================================================================
@@ -49,8 +65,12 @@ except ImportError:
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# Gemini API para análise de risco
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
 # Intervalos de scan (em segundos)
-SCAN_INTERVAL_SECONDS = 60         # Scan a cada 1 minuto
+SCAN_INTERVAL_SECONDS = 60         # Cripto a cada 1 minuto
+STOCK_SCAN_INTERVAL_SECONDS = 300  # Ações a cada 5 minutos
 NEW_POOLS_INTERVAL_SECONDS = 30    # Novos pools a cada 30s (mais crítico)
 SMART_MONEY_INTERVAL_SECONDS = 120 # Smart money a cada 2 min
 
@@ -65,6 +85,14 @@ DEFAULT_CEX_PAIRS = [
     'DOT/USDT', 'MATIC/USDT', 'PEPE/USDT', 'WIF/USDT',
     'BONK/USDT', 'SHIB/USDT', 'ARB/USDT', 'OP/USDT',
     'SUI/USDT', 'SEI/USDT', 'INJ/USDT', 'TIA/USDT'
+]
+
+# Ações para monitorar
+DEFAULT_STOCK_SYMBOLS = [
+    # Brasil
+    'PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBDC4.SA', 'WEGE3.SA',
+    # EUA
+    'AAPL', 'GOOGL', 'MSFT', 'NVDA', 'TSLA'
 ]
 
 # Chains para monitorar novos pools
@@ -287,6 +315,90 @@ def monitor_smart_money():
             print(f"   ❌ Erro em {chain}: {e}")
 
 
+def monitor_stocks():
+    """
+    Monitora ações para padrões de DIP e BREAKOUT.
+    Roda a cada 5 minutos (STOCK_SCAN_INTERVAL_SECONDS).
+    """
+    if not STOCKS_AVAILABLE:
+        return
+    
+    print(f"\n📊 [Stock Monitor] Analisando {len(DEFAULT_STOCK_SYMBOLS)} ações...")
+    
+    try:
+        opportunities = scan_stocks(DEFAULT_STOCK_SYMBOLS)
+        
+        for opp in opportunities:
+            symbol = opp.get('symbol', 'N/A')
+            confidence = opp.get('confidence', 0)
+            pattern = opp.get('pattern', '')
+            
+            # Evita alertas duplicados
+            alert_key = f"stock_{symbol}_{datetime.now().strftime('%Y%m%d%H')}"
+            if alert_key in alerted_tokens:
+                continue
+            
+            if confidence >= MIN_CONFIDENCE_ALERT:
+                emoji = "📉" if pattern == "DIP" else "📈"
+                print(f"   {emoji} {symbol}: {pattern} | {opp.get('change_1h', 0):+.2f}% | Conf: {confidence}%")
+                
+                # Análise de risco IA (se disponível)
+                risk_text = ""
+                if AI_RISK_AVAILABLE and GEMINI_API_KEY:
+                    risk = analisar_oportunidade_ia(opp, GEMINI_API_KEY)
+                    risk_text = format_risk_for_telegram(risk)
+                
+                if confidence >= MIN_CONFIDENCE_TELEGRAM:
+                    msg = format_stock_alert(opp, risk_text)
+                    send_telegram_alert(msg)
+                    alerted_tokens.add(alert_key)
+                
+    except Exception as e:
+        print(f"   ❌ Erro no scan de ações: {e}")
+
+
+def format_stock_alert(opp: Dict, risk_text: str = "") -> str:
+    """
+    Formata alerta de ação para Telegram.
+    """
+    symbol = opp.get('symbol', 'N/A')
+    name = opp.get('name', symbol)
+    pattern = opp.get('pattern', '')
+    signal = opp.get('signal', '')
+    confidence = opp.get('confidence', 0)
+    change = opp.get('change_1h', 0)
+    price = opp.get('price', 0)
+    
+    emoji = "📉" if pattern == "DIP" else "📈"
+    
+    msg = f"""
+{emoji} *{pattern}: {symbol}*
+📋 *Tipo:* AÇÃO
+🏢 *Nome:* {name}
+
+💲 *Preço:* ${price:.2f}
+📊 *Variação 1h:* {change:+.2f}%
+🎯 *Confiança:* {confidence}%
+⚡ *Sinal:* {signal}
+
+📊 *Motivos:*
+"""
+    
+    for exp in opp.get('explanation', []):
+        msg += f"• {exp}\n"
+    
+    if risk_text:
+        msg += risk_text
+    
+    url = opp.get('url', '')
+    if url:
+        msg += f"\n🔗 [Yahoo Finance]({url})"
+    
+    msg += f"\n\n⏰ {datetime.now().strftime('%H:%M:%S')}"
+    
+    return msg
+
+
 def run_daemon():
     """
     Loop principal do daemon de monitoramento.
@@ -310,6 +422,7 @@ def run_daemon():
     iteration = 0
     last_pool_check = 0
     last_smart_money_check = 0
+    last_stock_check = 0
     
     try:
         while True:
@@ -320,18 +433,23 @@ def run_daemon():
             print(f"🔄 Iteração #{iteration} - {datetime.now().strftime('%H:%M:%S')}")
             print(f"{'='*60}")
             
-            # Monitor CEX (a cada intervalo padrão)
+            # Monitor CEX Cripto (a cada 1 minuto)
             monitor_cex_accumulation()
             
-            # Monitor Pools (mais frequente)
+            # Monitor Pools (a cada 30s)
             if current_time - last_pool_check >= NEW_POOLS_INTERVAL_SECONDS:
                 monitor_new_pools()
                 last_pool_check = current_time
             
-            # Monitor Smart Money (menos frequente)
+            # Monitor Smart Money (a cada 2 min)
             if current_time - last_smart_money_check >= SMART_MONEY_INTERVAL_SECONDS:
                 monitor_smart_money()
                 last_smart_money_check = current_time
+            
+            # Monitor Ações (a cada 5 min)
+            if current_time - last_stock_check >= STOCK_SCAN_INTERVAL_SECONDS:
+                monitor_stocks()
+                last_stock_check = current_time
             
             # Limpa histórico antigo (manter só últimas 1000 entradas)
             if len(alerted_tokens) > 1000:
