@@ -908,39 +908,59 @@ with tab4:
         if preco_atual > 0:
             st.info(f"📊 **Preço atual de {fav['symbol']}**: ${preco_atual:,.6f}")
         
+        # Toggle: Comprar por valor ou por quantidade
+        modo_compra = st.radio("📝 Modo de compra:", ["💵 Por capital ($)", "📦 Por quantidade"], horizontal=True)
+        
         col1, col2 = st.columns(2)
         with col1:
-            capital = st.number_input("💵 Capital disponível ($)", value=1000.0, min_value=0.01)
-            risco_pct = st.slider("⚠️ Risco máximo (%)", 1, 20, 5)
             preco_entrada = st.number_input("📈 Preço de entrada ($)", value=preco_default, min_value=0.0000001, format="%.6f")
+            
+            if modo_compra == "💵 Por capital ($)":
+                capital = st.number_input("💵 Capital a investir ($)", value=1000.0, min_value=0.01)
+                quantidade = capital / preco_entrada if preco_entrada > 0 else 0
+            else:
+                quantidade = st.number_input("📦 Quantidade de unidades", value=100.0, min_value=0.01)
+                capital = quantidade * preco_entrada
+                
         with col2:
             stop_loss = st.number_input("🛑 Stop Loss ($)", value=stop_default, min_value=0.0000001, format="%.6f")
             take_profit = st.number_input("🎯 Take Profit ($)", value=target_default, min_value=0.0000001, format="%.6f")
         
-        risco_valor = capital * (risco_pct / 100)
-        dif_stop = abs(preco_entrada - stop_loss)
-        posicao = risco_valor / dif_stop if dif_stop > 0 else 0
-        ganho = (take_profit - preco_entrada) * posicao
-        perda = dif_stop * posicao
-        rr_ratio = ganho / perda if perda > 0 else 0
+        # Cálculos corrigidos
+        valor_investido = quantidade * preco_entrada
+        
+        # Ganho/Perda por unidade
+        ganho_por_unidade = take_profit - preco_entrada
+        perda_por_unidade = preco_entrada - stop_loss
+        
+        # Ganho/Perda total
+        ganho_total = ganho_por_unidade * quantidade
+        perda_total = perda_por_unidade * quantidade
+        
+        # Percentuais
+        ganho_pct = (ganho_por_unidade / preco_entrada) * 100 if preco_entrada > 0 else 0
+        perda_pct = (perda_por_unidade / preco_entrada) * 100 if preco_entrada > 0 else 0
+        
+        # Risco/Recompensa
+        rr_ratio = ganho_por_unidade / perda_por_unidade if perda_por_unidade > 0 else 0
         
         st.markdown("---")
-        st.subheader("📊 Resultado")
+        st.subheader("📊 Resultado da Simulação")
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📦 Posição", f"{posicao:,.4f}")
-        c2.metric("💵 Valor", f"${posicao * preco_entrada:,.2f}")
-        c3.metric("🎯 Ganho", f"${ganho:,.2f}", delta=f"+{ganho/capital*100:.1f}%")
-        c4.metric("🛑 Perda", f"${perda:,.2f}", delta=f"-{perda/capital*100:.1f}%")
+        c1.metric("📦 Quantidade", f"{quantidade:,.4f}")
+        c2.metric("💵 Valor Investido", f"${valor_investido:,.2f}")
+        c3.metric("🎯 Ganho Potencial", f"${ganho_total:,.2f}", delta=f"+{ganho_pct:.2f}%")
+        c4.metric("🛑 Perda Potencial", f"${perda_total:,.2f}", delta=f"-{perda_pct:.2f}%")
         
         if rr_ratio >= 3:
-            st.success(f"✅ R/R: {rr_ratio:.2f}:1 - **Excelente**")
+            st.success(f"✅ Risco/Recompensa: {rr_ratio:.2f}:1 - **Excelente**")
         elif rr_ratio >= 2:
-            st.info(f"🟡 R/R: {rr_ratio:.2f}:1 - **Bom**")
+            st.info(f"🟡 Risco/Recompensa: {rr_ratio:.2f}:1 - **Bom**")
         elif rr_ratio >= 1:
-            st.warning(f"⚠️ R/R: {rr_ratio:.2f}:1 - **Neutro**")
+            st.warning(f"⚠️ Risco/Recompensa: {rr_ratio:.2f}:1 - **Neutro**")
         else:
-            st.error(f"❌ R/R: {rr_ratio:.2f}:1 - **Desfavorável**")
+            st.error(f"❌ Risco/Recompensa: {rr_ratio:.2f}:1 - **Desfavorável**")
         
         st.markdown("---")
         st.subheader("🧠 Análise IA")
@@ -950,93 +970,24 @@ with tab4:
                 with st.spinner("Analisando..."):
                     try:
                         client = genai.Client(api_key=api_key)
-                        dados = fav.get('data', {})
+                        dados_fav = fav.get('data', {})
                         prompt = f"""
-Analise para investidor:
+Analise esta simulação de investimento:
 - Ativo: {fav['symbol']}
-- Capital: ${capital}, Entrada: ${preco_entrada}, Stop: ${stop_loss}, Target: ${take_profit}
+- Quantidade: {quantidade:.4f} unidades
+- Valor investido: ${valor_investido:,.2f}
+- Entrada: ${preco_entrada:.6f}
+- Stop Loss: ${stop_loss:.6f} (perda: ${perda_total:,.2f}, -{perda_pct:.2f}%)
+- Take Profit: ${take_profit:.6f} (ganho: ${ganho_total:,.2f}, +{ganho_pct:.2f}%)
 - R/R: {rr_ratio:.2f}:1
 
-Dados: {json.dumps(dados, default=str)[:800]}
+Dados do ativo: {json.dumps(dados_fav, default=str)[:600]}
 
 Forneça:
-## 📊 Cenário Otimista (%)
-## 📉 Cenário Pessimista (%)  
-## 🎯 Mais Provável
-## ⚠️ Riscos
+## 📊 Análise da Operação
+## 🎯 Cenário Mais Provável
+## ⚠️ Pontos de Atenção
 ## 💡 Recomendação
-
-DISCLAIMER: Não é conselho financeiro. Max 150 palavras.
-"""
-                        response = client.models.generate_content(model='gemini-3-flash-preview', contents=prompt)
-                        st.markdown(response.text)
-                    except Exception as e:
-                        st.error(f"Erro: {e}")
-            else:
-                st.error("⚠️ Configure a Gemini API Key.")
-        
-        # ================================================================
-        # ANÁLISE DAY TRADE
-        # ================================================================
-        st.markdown("---")
-        st.subheader("⚡ Análise Day Trade")
-        st.caption("Calculadora especializada para operações intraday")
-        
-        col_dt1, col_dt2 = st.columns(2)
-        with col_dt1:
-            num_operacoes = st.number_input("📊 Operações por dia", value=5, min_value=1, max_value=50)
-            taxa_sucesso = st.slider("🎯 Taxa de sucesso (%)", 30, 80, 55)
-            ganho_medio_pct = st.number_input("📈 Ganho médio por op. (%)", value=1.0, min_value=0.1, max_value=10.0)
-        with col_dt2:
-            perda_media_pct = st.number_input("📉 Perda média por op. (%)", value=0.5, min_value=0.1, max_value=10.0)
-            dias_mes = st.number_input("📅 Dias de trading/mês", value=20, min_value=1, max_value=30)
-        
-        # Cálculos Day Trade
-        ops_ganhadoras = num_operacoes * (taxa_sucesso / 100)
-        ops_perdedoras = num_operacoes * (1 - taxa_sucesso / 100)
-        
-        lucro_dia = (ops_ganhadoras * ganho_medio_pct - ops_perdedoras * perda_media_pct) / 100 * capital
-        lucro_mes = lucro_dia * dias_mes
-        retorno_mes_pct = (lucro_mes / capital) * 100
-        
-        expectativa = (taxa_sucesso/100 * ganho_medio_pct) - ((100-taxa_sucesso)/100 * perda_media_pct)
-        
-        st.markdown("### 📊 Projeção Day Trade")
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 Lucro/Dia", f"${lucro_dia:,.2f}", delta=f"{lucro_dia/capital*100:.2f}%")
-        c2.metric("📅 Lucro/Mês", f"${lucro_mes:,.2f}", delta=f"{retorno_mes_pct:.1f}%")
-        c3.metric("📈 Expectativa", f"{expectativa:.2f}%")
-        c4.metric("🎯 Payoff", f"{ganho_medio_pct/perda_media_pct:.2f}:1")
-        
-        # Análise da viabilidade
-        if expectativa > 0.3:
-            st.success(f"✅ Expectativa Positiva! Sistema potencialmente lucrativo.")
-        elif expectativa > 0:
-            st.warning(f"⚠️ Expectativa marginalmente positiva. Revise taxa de sucesso ou payoff.")
-        else:
-            st.error(f"❌ Expectativa Negativa! Este sistema tende a perder dinheiro.")
-        
-        # Análise IA Day Trade
-        if st.button("🧠 Análise IA Day Trade", key="dt_analysis"):
-            if api_key and genai:
-                with st.spinner("Analisando estratégia..."):
-                    try:
-                        client = genai.Client(api_key=api_key)
-                        prompt = f"""
-Analise esta estratégia de Day Trade:
-- Ativo: {fav['symbol']}
-- Capital: ${capital}
-- {num_operacoes} operações/dia, {dias_mes} dias/mês
-- Taxa sucesso: {taxa_sucesso}%, Ganho médio: {ganho_medio_pct}%, Perda média: {perda_media_pct}%
-- Expectativa matemática: {expectativa:.2f}%
-- Lucro projetado/mês: ${lucro_mes:,.2f} ({retorno_mes_pct:.1f}%)
-
-Forneça:
-## ⚡ Viabilidade da Estratégia
-## 📊 Métricas Críticas
-## ⚠️ Riscos do Day Trade
-## 💡 Sugestões de Melhoria
 
 DISCLAIMER: Simulação educacional. NÃO é conselho financeiro. Max 150 palavras.
 """
