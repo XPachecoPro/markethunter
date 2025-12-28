@@ -880,6 +880,101 @@ def buscar_dados_stocks(vol_threshold, price_max, custom_symbol=None):
 with tab1:
     st.title("🎯 Scanner")
     
+    # ========== SNIPER MODE ==========
+    with st.expander("🎯 **SNIPER MODE** - Detecção de Acumulação PRÉ-PUMP", expanded=False):
+        st.caption("Detecta quando Smart Money está acumulando antes do preço explodir")
+        
+        # Importa módulos do sniper
+        try:
+            from sniper_logic import (
+                check_accumulation_pattern_cex,
+                check_liquidity_snipe,
+                classify_alert
+            )
+            sniper_loaded = True
+        except ImportError as e:
+            st.error(f"❌ Erro ao carregar sniper: {e}")
+            sniper_loaded = False
+        
+        if sniper_loaded:
+            # Configurações
+            col_sniper1, col_sniper2 = st.columns(2)
+            with col_sniper1:
+                sniper_vol_threshold = st.slider(
+                    "📈 Volume Spike Mínimo", 
+                    min_value=2.0, max_value=10.0, value=3.0, step=0.5,
+                    help="Volume deve ser Xx acima da média 24h"
+                )
+            with col_sniper2:
+                sniper_price_max = st.slider(
+                    "💤 Variação Preço Máx (%)",
+                    min_value=1.0, max_value=10.0, value=5.0, step=0.5,
+                    help="Preço deve ter variado menos que X%"
+                )
+            
+            # Pares para analisar
+            sniper_pairs = st.multiselect(
+                "🔍 Pares para Sniper",
+                options=['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
+                         'ADA/USDT', 'AVAX/USDT', 'DOGE/USDT', 'PEPE/USDT', 'WIF/USDT',
+                         'BONK/USDT', 'ARB/USDT', 'OP/USDT', 'SUI/USDT', 'INJ/USDT'],
+                default=['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'PEPE/USDT']
+            )
+            
+            if st.button("🎯 Executar Sniper Scan", type="primary", key="sniper_scan"):
+                with st.spinner("🔍 Analisando padrões de acumulação..."):
+                    sniper_results = []
+                    progress = st.progress(0)
+                    
+                    for i, pair in enumerate(sniper_pairs):
+                        progress.progress((i + 1) / len(sniper_pairs))
+                        result = check_accumulation_pattern_cex(
+                            pair, 
+                            volume_threshold=sniper_vol_threshold,
+                            price_threshold=sniper_price_max
+                        )
+                        if result:
+                            sniper_results.append(result)
+                        time.sleep(0.3)
+                    
+                    progress.empty()
+                    st.session_state.sniper_results = sniper_results
+            
+            # Exibe resultados
+            if 'sniper_results' in st.session_state and st.session_state.sniper_results:
+                results = st.session_state.sniper_results
+                
+                # Separa por status
+                accumulating = [r for r in results if r.get('is_accumulating')]
+                not_accumulating = [r for r in results if not r.get('is_accumulating')]
+                
+                if accumulating:
+                    st.success(f"🔥 **{len(accumulating)} OPORTUNIDADES DETECTADAS!**")
+                    for r in accumulating:
+                        classification, emoji, action = classify_alert(r['confidence'])
+                        with st.container():
+                            st.markdown(f"""
+**{emoji} {r['symbol']}** | Confiança: **{r['confidence']}%**
+- 📈 Volume: **{r['volume_ratio']:.1f}x** acima da média
+- 💲 Preço: **{r['price_change_pct']:+.2f}%**
+                            """)
+                            for signal in r.get('signals', []):
+                                st.write(f"  • {signal}")
+                            st.divider()
+                else:
+                    st.info("❄️ Nenhum padrão de acumulação detectado no momento")
+                
+                # Resumo de todos
+                with st.expander("📊 Ver todos os pares analisados"):
+                    for r in results:
+                        status = "✅" if r.get('is_accumulating') else "⚪"
+                        st.write(f"{status} **{r['symbol']}**: Vol {r['volume_ratio']:.2f}x, Preço {r['price_change_pct']:+.2f}%, Conf {r['confidence']}%")
+            
+            st.divider()
+            st.caption("💡 **Para monitoramento 24/7**, rode: `python accumulation_daemon.py --daemon`")
+    
+    st.divider()
+    
     col_plat, col_filter = st.columns([1, 2])
     with col_plat:
         plataforma = st.selectbox("📊 Plataforma:", 
