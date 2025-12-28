@@ -222,15 +222,30 @@ if 'alertas_vistos' not in st.session_state:
 
 # Carrega favoritos do usuário via Supabase
 if not st.session_state.favoritos and st.session_state.user:
-    db_favs = buscar_favoritos_usuario(st.session_state.user['id'])
-    # Converte do formato do DB para o formato da UI
-    st.session_state.favoritos = [{
-        'key': f['asset_key'],
-        'data': f['asset_data'],
-        'plataforma': f['plataforma'],
-        'symbol': f['symbol'],
-        'added_at': f['created_at']
-    } for f in db_favs]
+    try:
+        db_favs = buscar_favoritos_usuario(st.session_state.user['id'])
+        loaded_favs = []
+        for f in db_favs:
+            asset_data = f['asset_data']
+            plat = f['plataforma']
+            
+            # Deriva o nome baseado na plataforma
+            if "DexScreener" in plat:
+                name = asset_data.get('baseToken', {}).get('name', asset_data.get('symbol', 'N/A'))
+            else:
+                name = asset_data.get('name', asset_data.get('symbol', 'N/A'))
+                
+            loaded_favs.append({
+                'key': f['asset_key'],
+                'data': asset_data,
+                'plataforma': plat,
+                'symbol': f['symbol'],
+                'name': name,
+                'added_at': f['created_at'].split('T')[0] if 'T' in f['created_at'] else f['created_at']
+            })
+        st.session_state.favoritos = loaded_favs
+    except Exception as e:
+        print(f"Erro ao carregar favoritos: {e}")
 
 # === SIDEBAR - CONFIGURAÇÕES ===
 st.sidebar.title("🦅 MarketHunter")
@@ -319,7 +334,7 @@ def get_asset_key(op, plataforma):
 
 def is_favorito(op, plataforma):
     key = get_asset_key(op, plataforma)
-    return any(f.get('key') == key for f in st.session_state.favoritos)
+    return any(f.get('key') == key for f in st.session_state.get('favoritos', []))
 
 def adicionar_favorito(op, plataforma):
     key = get_asset_key(op, plataforma)
@@ -329,6 +344,8 @@ def adicionar_favorito(op, plataforma):
             'data': op,
             'plataforma': plataforma,
             'symbol': op.get('baseToken', {}).get('symbol', op.get('symbol', 'N/A')),
+            'name': op.get('baseToken', {}).get('name', op.get('name', op.get('symbol', 'N/A'))),
+            'added_at': datetime.now().strftime("%Y-%m-%d %H:%M")
         }
         if st.session_state.user:
             if adicionar_favorito_db(st.session_state.user['id'], favorito):
