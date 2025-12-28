@@ -7,7 +7,14 @@ import json
 import os
 import threading
 import time
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
+
+# Cache de análises IA (evita chamadas redundantes)
+# Estrutura: { "symbol_platform": {"response": str, "forca": int, "timestamp": datetime} }
+if 'ia_cache' not in st.session_state:
+    st.session_state.ia_cache = {}
+IA_CACHE_TTL_MINUTES = 30  # Cache válido por 30 minutos
 
 # Imports com fallback para cloud
 try:
@@ -758,8 +765,27 @@ with tab1:
             client = genai.Client(api_key=api_key)
             
             analisados = []
+            cache_hits = 0
             for i, op in enumerate(raw_oportunidades[:15]):  # Aumentado para 15
                 progress.progress((i + 1) / len(raw_oportunidades[:15]))
+                
+                # Gera chave única para cache
+                symbol = op.get('symbol', op.get('baseToken', {}).get('symbol', 'unknown'))
+                cache_key = f"{symbol}_{plataforma}"
+                
+                # Verifica cache existente e válido
+                cached = st.session_state.ia_cache.get(cache_key)
+                if cached:
+                    cache_age = datetime.now() - cached.get('timestamp', datetime.min)
+                    if cache_age < timedelta(minutes=IA_CACHE_TTL_MINUTES):
+                        # Usa resultado do cache
+                        op['ia_veredito'] = f"📦 {cached['response']}"
+                        op['ia_score'] = cached['score']
+                        op['ia_forca'] = cached['forca']
+                        op['cached'] = True
+                        analisados.append(op)
+                        cache_hits += 1
+                        continue
                 
                 try:
                     # Monta texto do ativo com dados relevantes
@@ -789,22 +815,38 @@ Seja preciso. Zero rodeios."""
                         model='gemini-3-flash-preview',
                         contents=prompt
                     )
-                    veredito = response.text.strip()[:150]
+                    veredito = response.text.strip()[:200]
                     
-                    # Classifica para ordenar (novo formato)
+                    # Extrai força do sinal (1-10) da resposta
+                    forca_match = re.search(r'\[FORÇA\]:\s*(\d+)', veredito, re.IGNORECASE)
+                    forca = int(forca_match.group(1)) if forca_match else 5
+                    forca = max(1, min(10, forca))  # Garante range 1-10
+                    
+                    # Classifica para ordenar baseado na força e no sinal
                     if "COMPRAR" in veredito.upper():
-                        score = 3
+                        score = 100 + forca  # 101-110
                     elif "AGUARDAR" in veredito.upper():
-                        score = 2
+                        score = 50 + forca   # 51-60
                     else:
-                        score = 1
+                        score = forca         # 1-10
+                    
+                    # Salva no cache
+                    st.session_state.ia_cache[cache_key] = {
+                        'response': veredito,
+                        'score': score,
+                        'forca': forca,
+                        'timestamp': datetime.now()
+                    }
                     
                     op['ia_veredito'] = veredito
                     op['ia_score'] = score
+                    op['ia_forca'] = forca
+                    op['cached'] = False
                     analisados.append(op)
                 except Exception as e:
                     op['ia_veredito'] = f"Erro: {str(e)[:30]}"
                     op['ia_score'] = 0
+                    op['ia_forca'] = 0
                     analisados.append(op)
             
             # Ordena por score (melhores primeiro)
@@ -816,28 +858,53 @@ Seja preciso. Zero rodeios."""
 
     oportunidades = st.session_state.oportunidades
     if oportunidades:
-        st.success(f"🎯 {len(oportunidades)} ativos analisados | Ordenados por oportunidade")
+        # Contagem de cache hits
+        cached_count = sum(1 for op in oportunidades if op.get('cached', False))
+        fresh_count = len(oportunidades) - cached_count
+        
+        col_stats1, col_stats2, col_stats3 = st.columns([2, 2, 1])
+        with col_stats1:
+            st.success(f"🎯 {len(oportunidades)} ativos analisados")
+        with col_stats2:
+            st.info(f"📦 Cache: {cached_count} | 🔄 Novos: {fresh_count} | TTL: {IA_CACHE_TTL_MINUTES}min")
+        with col_stats3:
+            if st.button("🗑️ Limpar Cache", help="Força nova análise IA"):
+                st.session_state.ia_cache = {}
+                st.session_state.oportunidades = []
+                st.rerun()
         
         for idx, op in enumerate(oportunidades[:15]):
             symbol_display = op.get('baseToken', {}).get('symbol', op.get('symbol', 'N/A'))
             is_fav = is_favorito(op, plataforma)
             veredito = op.get('ia_veredito', '')
             score = op.get('ia_score', 0)
+            forca = op.get('ia_forca', 0)
             
-            # Emoji baseado no score
-            if score == 3:
+            # Emoji e cor baseado na força do sinal
+            if forca >= 8:
                 badge = "🟢"
-            elif score == 2:
+                cor = "success"
+            elif forca >= 5:
                 badge = "🟡"
+                cor = "warning"
             else:
                 badge = "🔴"
+                cor = "error"
             
-            with st.expander(f"{badge} {'⭐' if is_fav else ''} **{symbol_display}**", expanded=(score == 3)):
+            # Barra visual de força
+            barra_cheia = "█" * forca
+            barra_vazia = "░" * (10 - forca)
+            barra_visual = f"{barra_cheia}{barra_vazia}"
+            
+            with st.expander(f"{badge} {'⭐' if is_fav else ''} **{symbol_display}** | Força: {forca}/10", expanded=(forca >= 8)):
+                # Score visual em destaque
+                st.markdown(f"### 📊 Força do Sinal: `{barra_visual}` **{forca}/10**")
+                
                 # Veredito da IA em destaque
                 if veredito:
-                    if score == 3:
+                    if cor == "success":
                         st.success(f"🧠 **{veredito}**")
-                    elif score == 2:
+                    elif cor == "warning":
                         st.warning(f"🧠 {veredito}")
                     else:
                         st.error(f"🧠 {veredito}")
@@ -1145,24 +1212,112 @@ Seja direto. Máximo 180 palavras.
                 st.error("⚠️ Configure a Gemini API Key.")
 
 # ============================================================================
-# TAB 5: HISTÓRICO DE ALERTAS
+# TAB 5: HISTÓRICO DE ALERTAS + DASHBOARD DE PERFORMANCE
 # ============================================================================
 with tab5:
-    st.title("🚨 Histórico de Alertas")
+    st.title("🚨 Dashboard de Alertas")
+    
+    # Inicializa tracking de outcomes na session_state
+    if 'alert_outcomes' not in st.session_state:
+        st.session_state.alert_outcomes = {}  # {alert_id: "acerto" | "erro"}
     
     alertas = carregar_alertas()
     
     if not alertas:
         st.info("Nenhum alerta ainda. Ative o monitor para receber alertas automáticos!")
     else:
-        for alerta in alertas[:20]:
-            acao = alerta.get('acao', '')
-            if acao == "COMPRAR":
-                st.success(f"🟢 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}...")
-            elif acao == "VENDER":
-                st.error(f"🔴 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}...")
+        # ===== SEÇÃO DE PERFORMANCE =====
+        st.subheader("📊 Performance dos Alertas")
+        
+        # Calcula métricas
+        total_alertas = len(alertas)
+        compras = [a for a in alertas if a.get('acao') == 'COMPRAR']
+        vendas = [a for a in alertas if a.get('acao') == 'VENDER']
+        aguardar = [a for a in alertas if a.get('acao') not in ['COMPRAR', 'VENDER']]
+        
+        # Outcomes
+        outcomes = st.session_state.alert_outcomes
+        acertos = sum(1 for v in outcomes.values() if v == 'acerto')
+        erros = sum(1 for v in outcomes.values() if v == 'erro')
+        total_avaliados = acertos + erros
+        taxa_acerto = (acertos / total_avaliados * 100) if total_avaliados > 0 else 0
+        
+        # Métricas em cards
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("📈 Total Alertas", total_alertas)
+        with col2:
+            st.metric("🟢 COMPRAR", len(compras))
+        with col3:
+            st.metric("🔴 VENDER", len(vendas))
+        with col4:
+            st.metric("🎯 Taxa Acerto", f"{taxa_acerto:.1f}%", 
+                     delta=f"{acertos}/{total_avaliados} avaliados" if total_avaliados > 0 else "0 avaliados")
+        
+        # Barra de progresso visual para taxa de acerto
+        if total_avaliados > 0:
+            st.progress(taxa_acerto / 100)
+            if taxa_acerto >= 70:
+                st.success(f"🏆 Excelente taxa de acerto! {acertos} corretos de {total_avaliados}")
+            elif taxa_acerto >= 50:
+                st.warning(f"📊 Taxa moderada. {acertos} corretos de {total_avaliados}")
             else:
-                st.info(f"🟡 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}...")
+                st.error(f"⚠️ Taxa baixa. Revise sua estratégia. {acertos} corretos de {total_avaliados}")
+        
+        st.divider()
+        
+        # ===== HISTÓRICO COM AVALIAÇÃO =====
+        st.subheader("📜 Histórico de Alertas")
+        st.caption("💡 Marque os alertas como ✅ Acertou ou ❌ Errou para calcular sua taxa de acerto")
+        
+        for idx, alerta in enumerate(alertas[:30]):
+            alert_id = f"{alerta.get('symbol')}_{alerta.get('timestamp', idx)}"
+            acao = alerta.get('acao', '')
+            symbol = alerta.get('symbol', 'N/A')
+            mensagem = alerta.get('mensagem', '')[:100]
+            outcome = outcomes.get(alert_id)
+            
+            # Escolhe cor baseada na ação
+            if acao == "COMPRAR":
+                color = "🟢"
+                container_type = st.success
+            elif acao == "VENDER":
+                color = "🔴"
+                container_type = st.error
+            else:
+                color = "🟡"
+                container_type = st.info
+            
+            # Indicador de outcome
+            if outcome == 'acerto':
+                outcome_badge = "✅"
+            elif outcome == 'erro':
+                outcome_badge = "❌"
+            else:
+                outcome_badge = "⏳"
+            
+            with st.container():
+                col_alert, col_outcome = st.columns([4, 1])
+                
+                with col_alert:
+                    st.markdown(f"{color} {outcome_badge} **{symbol}** - {mensagem}...")
+                
+                with col_outcome:
+                    if outcome is None:
+                        btn_col1, btn_col2 = st.columns(2)
+                        with btn_col1:
+                            if st.button("✅", key=f"acerto_{alert_id}", help="Marcar como acerto"):
+                                st.session_state.alert_outcomes[alert_id] = 'acerto'
+                                st.rerun()
+                        with btn_col2:
+                            if st.button("❌", key=f"erro_{alert_id}", help="Marcar como erro"):
+                                st.session_state.alert_outcomes[alert_id] = 'erro'
+                                st.rerun()
+                    else:
+                        if st.button("↩️", key=f"reset_{alert_id}", help="Resetar avaliação"):
+                            del st.session_state.alert_outcomes[alert_id]
+                            st.rerun()
 
 # ============================================================================
 # TAB 6: NOTÍCIAS
