@@ -50,18 +50,20 @@ except ImportError:
     def fetch_all_news(*args, **kwargs): return []
     def get_trending_topics(*args, **kwargs): return []
 
+_AUTH_IMPORT_ERROR = None
 try:
     from auth import (
         cadastrar_usuario, autenticar_usuario, atualizar_usuario,
         buscar_favoritos_usuario, adicionar_favorito_db, remover_favorito_db,
         buscar_alertas_usuario, salvar_alerta_db
     )
-except ImportError:
-    def cadastrar_usuario(*args): return False, "Módulo auth não disponível"
-    def autenticar_usuario(*args): return False, None, "Módulo auth não disponível"
+except Exception as e:
+    _AUTH_IMPORT_ERROR = f"{type(e).__name__}: {str(e)}"
+    def cadastrar_usuario(*args): return False, f"Erro: {_AUTH_IMPORT_ERROR}"
+    def autenticar_usuario(*args): return False, None, f"Erro: {_AUTH_IMPORT_ERROR}"
     def atualizar_usuario(*args): return False
     def buscar_favoritos_usuario(*args): return []
-    def adicionar_favorito_db(*args): return False, "Módulo auth não disponível"
+    def adicionar_favorito_db(*args): return False, f"Erro: {_AUTH_IMPORT_ERROR}"
     def remover_favorito_db(*args): return False
     def buscar_alertas_usuario(*args): return []
     def salvar_alerta_db(*args): return False
