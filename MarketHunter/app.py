@@ -44,10 +44,20 @@ except ImportError:
     def get_trending_topics(*args, **kwargs): return []
 
 try:
-    from auth import cadastrar_usuario, autenticar_usuario
+    from auth import (
+        cadastrar_usuario, autenticar_usuario, atualizar_usuario,
+        buscar_favoritos_usuario, adicionar_favorito_db, remover_favorito_db,
+        buscar_alertas_usuario, salvar_alerta_db
+    )
 except ImportError:
     def cadastrar_usuario(*args): return False, "Módulo auth não disponível"
     def autenticar_usuario(*args): return False, None, "Módulo auth não disponível"
+    def atualizar_usuario(*args): return False
+    def buscar_favoritos_usuario(*args): return []
+    def adicionar_favorito_db(*args): return False
+    def remover_favorito_db(*args): return False
+    def buscar_alertas_usuario(*args): return []
+    def salvar_alerta_db(*args): return False
 
 # Mapeamento de código de país para bandeira emoji
 COUNTRY_FLAGS = {
@@ -89,10 +99,6 @@ def formatar_telefone(numero_raw, default_region="BR"):
 
 # CONFIGURAÇÃO DE PÁGINA
 st.set_page_config(page_title="MarketHunter - Sniper AI", page_icon="🦅", layout="wide")
-
-# Arquivos de dados
-FAVORITES_FILE = "favorites_data.json"
-ALERTS_FILE = "alerts_data.json"
 
 # ============================================================================
 # SISTEMA DE LOGIN
@@ -185,7 +191,7 @@ def mostrar_tela_login():
                     st.warning("Preencha todos os campos!")
         
         st.markdown("---")
-        st.caption("🔒 Seus dados são armazenados localmente de forma segura.")
+        st.caption("🔒 Seus dados são armazenados na nuvem de forma segura e privada.")
 
 # Verifica se está logado
 if not st.session_state.logged_in:
@@ -211,52 +217,20 @@ if 'alertas_vistos' not in st.session_state:
     st.session_state.alertas_vistos = set()
 
 # ============================================================================
-# FUNÇÕES DE PERSISTÊNCIA
+# INTERFACE PRINCIPAL
 # ============================================================================
 
-def carregar_favoritos_arquivo():
-    """Carrega favoritos do arquivo JSON."""
-    try:
-        if os.path.exists(FAVORITES_FILE):
-            with open(FAVORITES_FILE, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return []
-
-def salvar_favoritos_arquivo():
-    """Salva favoritos no arquivo JSON para o monitor E no Supabase."""
-    try:
-        # Salva localmente para o monitor
-        with open(FAVORITES_FILE, 'w') as f:
-            json.dump(st.session_state.favoritos, f, default=str)
-        
-        # Salva no Supabase
-        if st.session_state.user:
-            from auth import salvar_favoritos_usuario
-            email = st.session_state.user.get('email')
-            if email:
-                salvar_favoritos_usuario(email, st.session_state.favoritos)
-    except Exception as e:
-        st.error(f"Erro ao salvar favoritos: {e}")
-
-def carregar_alertas():
-    """Carrega alertas do monitor."""
-    try:
-        if os.path.exists(ALERTS_FILE):
-            with open(ALERTS_FILE, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return []
-
-# Carrega favoritos do usuário (do Supabase se disponível)
+# Carrega favoritos do usuário via Supabase
 if not st.session_state.favoritos and st.session_state.user:
-    user_favoritos = st.session_state.user.get('favoritos', [])
-    if user_favoritos:
-        st.session_state.favoritos = user_favoritos
-    else:
-        st.session_state.favoritos = carregar_favoritos_arquivo()
+    db_favs = buscar_favoritos_usuario(st.session_state.user['id'])
+    # Converte do formato do DB para o formato da UI
+    st.session_state.favoritos = [{
+        'key': f['asset_key'],
+        'data': f['asset_data'],
+        'plataforma': f['plataforma'],
+        'symbol': f['symbol'],
+        'added_at': f['created_at']
+    } for f in db_favs]
 
 # === SIDEBAR - CONFIGURAÇÕES ===
 st.sidebar.title("🦅 MarketHunter")
@@ -348,20 +322,20 @@ def adicionar_favorito(op, plataforma):
             'key': key,
             'data': op,
             'plataforma': plataforma,
-            'added_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
             'symbol': op.get('baseToken', {}).get('symbol', op.get('symbol', 'N/A')),
-            'name': op.get('baseToken', {}).get('name', op.get('name', op.get('symbol', 'N/A')))
         }
-        st.session_state.favoritos.append(favorito)
-        salvar_favoritos_arquivo()  # Salva para o monitor
-        return True
+        if st.session_state.user:
+            if adicionar_favorito_db(st.session_state.user['id'], favorito):
+                st.session_state.favoritos.append(favorito)
+                return True
     return False
 
 def remover_favorito(key):
-    st.session_state.favoritos = [f for f in st.session_state.favoritos if f.get('key') != key]
-    if key in st.session_state.analise_detalhada:
-        del st.session_state.analise_detalhada[key]
-    salvar_favoritos_arquivo()  # Atualiza arquivo
+    if st.session_state.user:
+        if remover_favorito_db(st.session_state.user['id'], key):
+            st.session_state.favoritos = [f for f in st.session_state.favoritos if f.get('key') != key]
+            if key in st.session_state.analise_detalhada:
+                del st.session_state.analise_detalhada[key]
 
 def gerar_analise_detalhada(dados, key, plataforma):
     if not api_key:
@@ -403,9 +377,10 @@ Máximo 150 palavras.
 # MONITOR DE BACKGROUND (THREAD)
 # ============================================================================
 
-def monitor_thread_task():
-    """Tarefa executada em background para monitorar favoritos."""
-    from favorites_monitor import atualizar_dados_ativo, analisar_oportunidade, verificar_alerta_urgente, enviar_telegram, salvar_alerta
+def monitor_thread_task(user_id):
+    """Tarefa executada em background para monitorar favoritos de um usuário."""
+    from favorites_monitor import atualizar_dados_ativo, analisar_oportunidade, verificar_alerta_urgente, enviar_telegram
+    from auth import buscar_favoritos_usuario, salvar_alerta_db
     
     # Hereda configurações do app
     monitor_api_key = api_key
@@ -419,27 +394,33 @@ def monitor_thread_task():
     
     while True:
         try:
-            if os.path.exists(FAVORITES_FILE):
-                with open(FAVORITES_FILE, 'r') as f:
-                    favoritos = json.load(f)
-            else:
-                favoritos = []
+            # Busca favoritos do banco relacional
+            favoritos = buscar_favoritos_usuario(user_id)
             
             if favoritos:
-                for fav in favoritos:
+                for f in favoritos:
+                    # Converte formato do DB para o formato do monitor
+                    fav = {
+                        'key': f['asset_key'],
+                        'plataforma': f['plataforma'],
+                        'data': f['asset_data'],
+                        'symbol': f['symbol']
+                    }
+                    
                     dados_atuais = atualizar_dados_ativo(fav)
                     if dados_atuais:
                         analise = analisar_oportunidade(fav, dados_atuais)
                         acao, mensagem = verificar_alerta_urgente(analise)
                         
                         if acao:
+                            # Notifica Telegram
                             enviar_telegram(f"🚨 *ALERTA DE {acao}!*\n\n📊 *{fav.get('symbol')}*\n{mensagem}")
-                            salvar_alerta({
+                            
+                            # Salva alerta no banco relacional
+                            salvar_alerta_db(user_id, {
                                 'symbol': fav.get('symbol'),
                                 'acao': acao,
-                                'mensagem': mensagem,
-                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                'plataforma': fav.get('plataforma', '')
+                                'mensagem': mensagem
                             })
                     time.sleep(2)
             time.sleep(60)
@@ -449,8 +430,8 @@ def monitor_thread_task():
 if 'monitor_running' not in st.session_state:
     st.session_state.monitor_running = False
 
-if not st.session_state.monitor_running:
-    thread = threading.Thread(target=monitor_thread_task, daemon=True)
+if not st.session_state.monitor_running and st.session_state.user:
+    thread = threading.Thread(target=monitor_thread_task, args=(st.session_state.user['id'],), daemon=True)
     thread.start()
     st.session_state.monitor_running = True
     st.sidebar.info("📡 Scanner Background Ativado")
