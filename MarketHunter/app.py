@@ -407,18 +407,27 @@ Máximo 150 palavras.
 
 def monitor_thread_task(user_id):
     """Tarefa executada em background para monitorar favoritos de um usuário."""
-    from favorites_monitor import atualizar_dados_ativo, analisar_oportunidade, verificar_alerta_urgente, enviar_telegram
     from auth import buscar_favoritos_usuario, salvar_alerta_db
     
-    # Hereda configurações do app
-    monitor_api_key = api_key
-    monitor_tg_token = st.secrets.get("telegram", {}).get("bot_token", "")
-    monitor_tg_id = st.secrets.get("telegram", {}).get("chat_id", "")
+    # Configura variáveis de ambiente ANTES de importar o monitor
+    try:
+        monitor_tg_token = st.secrets.get("telegram", {}).get("bot_token", "")
+        monitor_tg_id = st.secrets.get("telegram", {}).get("chat_id", "")
+        monitor_api_key = st.secrets.get("gemini", {}).get("api_key", "")
+    except:
+        monitor_tg_token = ""
+        monitor_tg_id = ""
+        monitor_api_key = ""
     
-    # Seta variáveis de ambiente para o monitor
-    os.environ["GEMINI_API_KEY"] = monitor_api_key
     os.environ["TELEGRAM_BOT_TOKEN"] = monitor_tg_token
     os.environ["TELEGRAM_CHAT_ID"] = monitor_tg_id
+    os.environ["GEMINI_API_KEY"] = monitor_api_key
+    
+    # Agora importa o módulo que usa as variáveis de ambiente
+    from favorites_monitor import atualizar_dados_ativo, analisar_oportunidade, verificar_alerta_urgente, enviar_telegram
+    
+    print(f"🚀 [Monitor] Iniciado para user_id={user_id}")
+    print(f"📱 [Monitor] Telegram configurado: {bool(monitor_tg_token)}")
     
     while True:
         try:
@@ -426,6 +435,7 @@ def monitor_thread_task(user_id):
             favoritos = buscar_favoritos_usuario(user_id)
             
             if favoritos:
+                print(f"🔍 [Monitor] Analisando {len(favoritos)} favoritos...")
                 for f in favoritos:
                     # Converte formato do DB para o formato do monitor
                     fav = {
@@ -442,7 +452,9 @@ def monitor_thread_task(user_id):
                         
                         if acao:
                             # Notifica Telegram
-                            enviar_telegram(f"🚨 *ALERTA DE {acao}!*\n\n📊 *{fav.get('symbol')}*\n{mensagem}")
+                            msg_tg = f"🚨 *ALERTA DE {acao}!*\n\n📊 *{fav.get('symbol')}*\n{mensagem}"
+                            sucesso_tg = enviar_telegram(msg_tg)
+                            print(f"📱 [Monitor] Telegram enviado: {sucesso_tg}")
                             
                             # Salva alerta no banco relacional
                             salvar_alerta_db(user_id, {
@@ -453,6 +465,7 @@ def monitor_thread_task(user_id):
                     time.sleep(2)
             time.sleep(60)
         except Exception as e:
+            print(f"❌ [Monitor] Erro: {e}")
             time.sleep(10)
 
 if 'monitor_running' not in st.session_state:
