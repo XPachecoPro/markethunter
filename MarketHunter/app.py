@@ -954,6 +954,78 @@ DISCLAIMER: Não é conselho financeiro. Max 150 palavras.
                         st.error(f"Erro: {e}")
             else:
                 st.error("⚠️ Configure a Gemini API Key.")
+        
+        # ================================================================
+        # ANÁLISE DAY TRADE
+        # ================================================================
+        st.markdown("---")
+        st.subheader("⚡ Análise Day Trade")
+        st.caption("Calculadora especializada para operações intraday")
+        
+        col_dt1, col_dt2 = st.columns(2)
+        with col_dt1:
+            num_operacoes = st.number_input("📊 Operações por dia", value=5, min_value=1, max_value=50)
+            taxa_sucesso = st.slider("🎯 Taxa de sucesso (%)", 30, 80, 55)
+            ganho_medio_pct = st.number_input("📈 Ganho médio por op. (%)", value=1.0, min_value=0.1, max_value=10.0)
+        with col_dt2:
+            perda_media_pct = st.number_input("📉 Perda média por op. (%)", value=0.5, min_value=0.1, max_value=10.0)
+            dias_mes = st.number_input("📅 Dias de trading/mês", value=20, min_value=1, max_value=30)
+        
+        # Cálculos Day Trade
+        ops_ganhadoras = num_operacoes * (taxa_sucesso / 100)
+        ops_perdedoras = num_operacoes * (1 - taxa_sucesso / 100)
+        
+        lucro_dia = (ops_ganhadoras * ganho_medio_pct - ops_perdedoras * perda_media_pct) / 100 * capital
+        lucro_mes = lucro_dia * dias_mes
+        retorno_mes_pct = (lucro_mes / capital) * 100
+        
+        expectativa = (taxa_sucesso/100 * ganho_medio_pct) - ((100-taxa_sucesso)/100 * perda_media_pct)
+        
+        st.markdown("### 📊 Projeção Day Trade")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("💰 Lucro/Dia", f"${lucro_dia:,.2f}", delta=f"{lucro_dia/capital*100:.2f}%")
+        c2.metric("📅 Lucro/Mês", f"${lucro_mes:,.2f}", delta=f"{retorno_mes_pct:.1f}%")
+        c3.metric("📈 Expectativa", f"{expectativa:.2f}%")
+        c4.metric("🎯 Payoff", f"{ganho_medio_pct/perda_media_pct:.2f}:1")
+        
+        # Análise da viabilidade
+        if expectativa > 0.3:
+            st.success(f"✅ Expectativa Positiva! Sistema potencialmente lucrativo.")
+        elif expectativa > 0:
+            st.warning(f"⚠️ Expectativa marginalmente positiva. Revise taxa de sucesso ou payoff.")
+        else:
+            st.error(f"❌ Expectativa Negativa! Este sistema tende a perder dinheiro.")
+        
+        # Análise IA Day Trade
+        if st.button("🧠 Análise IA Day Trade", key="dt_analysis"):
+            if api_key and genai:
+                with st.spinner("Analisando estratégia..."):
+                    try:
+                        client = genai.Client(api_key=api_key)
+                        prompt = f"""
+Analise esta estratégia de Day Trade:
+- Ativo: {fav['symbol']}
+- Capital: ${capital}
+- {num_operacoes} operações/dia, {dias_mes} dias/mês
+- Taxa sucesso: {taxa_sucesso}%, Ganho médio: {ganho_medio_pct}%, Perda média: {perda_media_pct}%
+- Expectativa matemática: {expectativa:.2f}%
+- Lucro projetado/mês: ${lucro_mes:,.2f} ({retorno_mes_pct:.1f}%)
+
+Forneça:
+## ⚡ Viabilidade da Estratégia
+## 📊 Métricas Críticas
+## ⚠️ Riscos do Day Trade
+## 💡 Sugestões de Melhoria
+
+DISCLAIMER: Simulação educacional. NÃO é conselho financeiro. Max 150 palavras.
+"""
+                        response = client.models.generate_content(model='gemini-3-flash-preview', contents=prompt)
+                        st.markdown(response.text)
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+            else:
+                st.error("⚠️ Configure a Gemini API Key.")
 
 # ============================================================================
 # TAB 5: HISTÓRICO DE ALERTAS
