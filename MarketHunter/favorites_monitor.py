@@ -152,7 +152,7 @@ Dados:
 {texto}
 """
         response = client.models.generate_content(
-            model='gemini-3-flash-preview',
+            model='gemini-2.0-flash',
             contents=prompt
         )
         return response.text.strip()

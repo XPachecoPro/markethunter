@@ -245,7 +245,7 @@ Responda APENAS no formato:
 [RESUMO]: máximo 20 palavras"""
 
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model='gemini-2.0-flash',
             contents=prompt
         )
         
