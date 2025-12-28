@@ -657,18 +657,62 @@ with tab1:
             c1, c2 = st.columns(2)
             volume_mult = c1.slider("Volume Mín (x)", 0.5, 10.0, 1.0)
             volatilidade_max = c2.slider("Volatilidade Máx (%)", 1.0, 20.0, 10.0)
-            busca_customizada = st.text_input("🔍 Buscar par específico (ex: BTCUSDT)", placeholder="Deixe vazio para varrer todos")
+            
+            # Autocomplete para pares Binance
+            pares_binance = [
+                "", "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
+                "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT", "LINKUSDT", "LTCUSDT",
+                "SHIBUSDT", "TRXUSDT", "ATOMUSDT", "UNIUSDT", "XLMUSDT", "NEARUSDT",
+                "APTUSDT", "ARBUSDT", "OPUSDT", "SUIUSDT", "SEIUSDT", "INJUSDT",
+                "BTCBRL", "ETHBRL", "SOLUSDT", "PEPEUSDT", "WIFUSDT", "BONKUSDT"
+            ]
+            busca_customizada = st.selectbox("🔍 Buscar par:", pares_binance, index=0, 
+                help="Selecione um par ou deixe vazio para varrer todos")
         else:
             c1, c2 = st.columns(2)
             volume_mult = c1.slider("Volume Mín (x)", 0.5, 5.0, 1.0)
             preco_max_var = c2.slider("Variação Máx (%)", 1.0, 20.0, 10.0)
-            busca_customizada = st.text_input("🔍 Buscar ativo específico (ex: AAPL, PETR4.SA)", placeholder="Deixe vazio para usar watchlist")
+            
+            # Autocomplete para ações
+            acoes_disponiveis = [
+                "", 
+                # Big Tech
+                "AAPL - Apple", "GOOGL - Alphabet", "MSFT - Microsoft", "AMZN - Amazon", 
+                "META - Meta", "NVDA - NVIDIA", "TSLA - Tesla", "NFLX - Netflix", 
+                # Semicondutores
+                "AMD - AMD", "INTC - Intel", "QCOM - Qualcomm", "AVGO - Broadcom", "ASML - ASML",
+                # Financeiro
+                "JPM - JPMorgan", "BAC - Bank of America", "GS - Goldman Sachs", "V - Visa", "MA - Mastercard",
+                # Energia
+                "XOM - Exxon", "CVX - Chevron", "COP - ConocoPhillips",
+                # Brasil
+                "PETR4.SA - Petrobras", "VALE3.SA - Vale", "ITUB4.SA - Itaú", "BBDC4.SA - Bradesco",
+                "B3SA3.SA - B3", "WEGE3.SA - WEG", "RENT3.SA - Localiza", "MGLU3.SA - Magazine Luiza",
+                "BBAS3.SA - Banco do Brasil", "ABEV3.SA - Ambev", "SUZB3.SA - Suzano", 
+                "JBSS3.SA - JBS", "ELET3.SA - Eletrobras", "CSAN3.SA - Cosan",
+                "RADL3.SA - RaiaDrogasil", "RAIL3.SA - Rumo", "VBBR3.SA - Vibra",
+                # ETFs
+                "SPY - S&P 500 ETF", "QQQ - Nasdaq ETF", "IWM - Russell 2000",
+                "BOVA11.SA - Ibovespa ETF", "SMAL11.SA - Small Caps BR"
+            ]
+            busca_selecionada = st.selectbox("🔍 Buscar ativo:", acoes_disponiveis, index=0,
+                help="Selecione um ativo ou deixe vazio para usar watchlist completa")
+            # Extrai só o símbolo (antes do " - ")
+            busca_customizada = busca_selecionada.split(" - ")[0] if busca_selecionada else ""
     
-    # Campo de busca para DexScreener também
+    # Campo de busca para DexScreener
     if plataforma == "Cripto (DexScreener)":
-        busca_token = st.text_input("🔍 Buscar token específico (endereço ou nome)", placeholder="Deixe vazio para varrer a rede")
+        tokens_populares = [
+            "", "solana", "ethereum", "bitcoin", "pepe", "shiba", "dogecoin",
+            "bonk", "wif", "jup", "ray", "pyth", "jito", "orca", "marinade",
+            "uniswap", "aave", "compound", "maker", "curve", "lido",
+            "arbitrum", "optimism", "polygon", "avalanche", "fantom"
+        ]
+        busca_token = st.selectbox("🔍 Buscar token:", tokens_populares, index=0,
+            help="Selecione um token popular ou deixe vazio para varrer a rede")
     else:
         busca_token = ""
+
 
     if st.button("🚀 Iniciar Scanner + Análise IA", type="primary"):
         with st.spinner(f"Varrendo {plataforma}..."):
