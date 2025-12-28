@@ -61,7 +61,7 @@ except ImportError:
     def autenticar_usuario(*args): return False, None, "Módulo auth não disponível"
     def atualizar_usuario(*args): return False
     def buscar_favoritos_usuario(*args): return []
-    def adicionar_favorito_db(*args): return False
+    def adicionar_favorito_db(*args): return False, "Módulo auth não disponível"
     def remover_favorito_db(*args): return False
     def buscar_alertas_usuario(*args): return []
     def salvar_alerta_db(*args): return False
@@ -355,13 +355,13 @@ def adicionar_favorito(op, plataforma):
             'added_at': datetime.now().strftime("%Y-%m-%d %H:%M")
         }
         if st.session_state.user:
-            sucesso = adicionar_favorito_db(st.session_state.user['id'], favorito)
+            sucesso, msg = adicionar_favorito_db(st.session_state.user['id'], favorito)
             if sucesso:
                 st.session_state.favoritos.append(favorito)
                 st.toast(f"⭐ {favorito['symbol']} adicionado aos favoritos!")
                 return True
             else:
-                st.error("❌ Erro ao salvar favorito. Verifique se a tabela 'favorites' existe no Supabase.")
+                st.error(f"❌ Erro ao salvar favorito: {msg}")
                 return False
     return False
 

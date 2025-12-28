@@ -124,12 +124,15 @@ def adicionar_favorito_db(user_id: str, fav: dict):
             }
             result = supabase.table("favorites").insert(data).execute()
         
-        return bool(result.data)
+        return True, "Favorito salvo com sucesso!"
     except Exception as e:
         import traceback
-        print(f"Erro ao adicionar favorito: {e}")
+        error_msg = str(e)
+        print(f"Erro ao adicionar favorito: {error_msg}")
+        print(f"User ID: {user_id}")
+        print(f"Favorito: {fav}")
         print(f"Traceback: {traceback.format_exc()}")
-        return False
+        return False, error_msg
 
 def remover_favorito_db(user_id: str, asset_key: str):
     """Remove um favorito do banco de dados relacional."""
