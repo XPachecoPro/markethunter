@@ -11,17 +11,25 @@ NEWS_FEEDS = {
         {"name": "Cointelegraph", "url": "https://cointelegraph.com/rss", "icon": "🪙"},
         {"name": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "icon": "📰"},
         {"name": "Decrypt", "url": "https://decrypt.co/feed", "icon": "🔐"},
+        {"name": "The Block", "url": "https://www.theblock.co/rss.xml", "icon": "🧱"},
+        {"name": "Bitcoin Magazine", "url": "https://bitcoinmagazine.com/feed", "icon": "₿"},
+        {"name": "Blockworks", "url": "https://blockworks.co/feed", "icon": "⛓️"},
     ],
     "stocks": [
         {"name": "Yahoo Finance", "url": "https://finance.yahoo.com/news/rssindex", "icon": "📈"},
         {"name": "Investing.com", "url": "https://www.investing.com/rss/news.rss", "icon": "💹"},
         {"name": "MarketWatch", "url": "https://feeds.marketwatch.com/marketwatch/topstories/", "icon": "📊"},
+        {"name": "Reuters Business", "url": "https://feeds.reuters.com/reuters/businessNews", "icon": "🌐"},
+        {"name": "CNBC", "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html", "icon": "📺"},
     ],
     "brazil": [
         {"name": "InfoMoney", "url": "https://www.infomoney.com.br/feed/", "icon": "🇧🇷"},
         {"name": "Valor Econômico", "url": "https://valor.globo.com/rss/valor/", "icon": "💰"},
+        {"name": "Exame Invest", "url": "https://exame.com/invest/feed/", "icon": "📑"},
+        {"name": "CNN Brasil Business", "url": "https://www.cnnbrasil.com.br/business/feed/", "icon": "📡"},
     ]
 }
+
 
 
 def fetch_news_from_feed(feed_url, max_items=10):

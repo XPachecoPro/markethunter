@@ -592,10 +592,25 @@ with tab1:
     
     with col_filter:
         if plataforma == "Cripto (DexScreener)":
-            query = st.text_input("🔍 Busca", value="solana")
+            # Seletor de rede multi-chain
+            chain_options = {
+                "☀️ Solana": "solana",
+                "⟠ Ethereum": "ethereum", 
+                "🟡 BNB Chain": "bsc",
+                "🔵 Arbitrum": "arbitrum",
+                "🔷 Base": "base",
+                "🟣 Polygon": "polygon",
+                "🔺 Avalanche": "avalanche",
+            }
+            selected_chain = st.selectbox("🌐 Rede:", options=list(chain_options.keys()), index=0)
+            chain_id = chain_options[selected_chain]
+            
             c1, c2 = st.columns(2)
             liquidez_min = c1.number_input("Liquidez Mín ($)", value=1000, min_value=0)
             fdv_max = c2.number_input("FDV Máx ($)", value=100000000, min_value=0)
+            
+            auto_save_gems = st.toggle("💎 Salvar gemas automaticamente no banco", value=True)
+
         elif plataforma == "Cripto (Binance)":
             c1, c2 = st.columns(2)
             volume_mult = c1.slider("Volume Mín (x)", 0.5, 10.0, 1.0)
@@ -608,7 +623,18 @@ with tab1:
     if st.button("🚀 Iniciar Scanner + Análise IA", type="primary"):
         with st.spinner(f"Varrendo {plataforma}..."):
             if plataforma == "Cripto (DexScreener)":
-                raw_oportunidades = buscar_dados_dexscreener(query, liquidez_min, fdv_max)
+                from dex_scanner import scan_dexscreener
+                raw_oportunidades = scan_dexscreener(chain_id, liquidez_min, fdv_max)
+                
+                # Auto-salva gemas identificadas
+                if auto_save_gems and raw_oportunidades:
+                    from auth import salvar_gema_db
+                    gems_salvas = 0
+                    for gem in raw_oportunidades:
+                        if salvar_gema_db(gem):
+                            gems_salvas += 1
+                    if gems_salvas > 0:
+                        st.toast(f"💎 {gems_salvas} gemas salvas no banco!")
             elif plataforma == "Cripto (Binance)":
                 raw_oportunidades = buscar_dados_binance(volume_mult, volatilidade_max)
             else:

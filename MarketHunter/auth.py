@@ -149,3 +149,40 @@ def salvar_alerta_db(user_id: str, alerta: dict):
     except Exception as e:
         print(f"Erro ao salvar alerta: {e}")
         return False
+
+def salvar_gema_db(gem: dict):
+    """
+    Salva uma gema identificada no banco de dados.
+    Ignora duplicatas baseado no pair_address.
+    """
+    try:
+        supabase = get_supabase_client()
+        data = {
+            "chain": gem.get('chain'),
+            "symbol": gem.get('symbol'),
+            "name": gem.get('name'),
+            "pair_address": gem.get('pairAddress'),
+            "liquidity": gem.get('liquidity'),
+            "fdv": gem.get('fdv'),
+            "vol_anomaly": gem.get('vol_anomaly'),
+            "dex": gem.get('dex'),
+            "url": gem.get('url'),
+            "reason": gem.get('reason')
+        }
+        # Usa upsert para ignorar duplicatas
+        result = supabase.table("gems").upsert(data, on_conflict="pair_address").execute()
+        return bool(result.data)
+    except Exception as e:
+        print(f"Erro ao salvar gema: {e}")
+        return False
+
+def buscar_gemas_recentes(limit=50):
+    """Busca as gemas mais recentes do banco de dados."""
+    try:
+        supabase = get_supabase_client()
+        result = supabase.table("gems").select("*").order("discovered_at", desc=True).limit(limit).execute()
+        return result.data if result.data else []
+    except Exception as e:
+        print(f"Erro ao buscar gemas: {e}")
+        return []
+
