@@ -297,8 +297,12 @@ if st.sidebar.button("🚪 Sair", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-# API Key interna (não exposta na UI)
-api_key = "AIzaSyABrNzrlu_dye66T-TVefG0eHIfOWEsr_A"
+# API Key (lendo de st.secrets para segurança)
+try:
+    api_key = st.secrets["gemini"]["api_key"]
+except:
+    api_key = ""
+    st.sidebar.error("⚠️ Gemini API Key não encontrada nos Secrets!")
 
 # Monitor Status
 st.sidebar.markdown("---")

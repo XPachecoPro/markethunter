@@ -1,16 +1,20 @@
-###############################################################################
-# FILE: auth.py - Sistema de Autenticação com Supabase
-###############################################################################
-import hashlib
-from datetime import datetime
+import streamlit as st
 from supabase import create_client, Client
 
-# Configurações do Supabase
-SUPABASE_URL = "https://hqlcsdjipnaijqgtadcc.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxbGNzZGppcG5haWpxZ3RhZGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY4ODcwMTIsImV4cCI6MjA4MjQ2MzAxMn0.kE5cnqHN-7AOCfLIDVjnygro2gKuaTtYZnyzxjgThQA"
+# Configurações do Supabase (lendo de st.secrets para segurança)
+try:
+    SUPABASE_URL = st.secrets["supabase"]["url"]
+    SUPABASE_KEY = st.secrets["supabase"]["key"]
+except:
+    # Fallback para evitar erro imediato, mas pedirá configuração
+    SUPABASE_URL = ""
+    SUPABASE_KEY = ""
 
 def get_supabase_client() -> Client:
     """Retorna cliente Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.error("⚠️ Configurações do Supabase não encontradas nos Secrets!")
+        st.stop()
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def hash_password(password: str) -> str:

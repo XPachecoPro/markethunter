@@ -4,14 +4,16 @@
 import time
 import json
 import requests
-import google.generativeai as genai
-from datetime import datetime
 import os
+try:
+    from google import genai
+except ImportError:
+    genai = None
 
-# Configurações
-TELEGRAM_BOT_TOKEN = "8308955598:AAE6bTRBPZKIt8N8KOgHWXR6TNwO7ShePIU"
-TELEGRAM_CHAT_ID = "1183036218"
-GEMINI_API_KEY = "AIzaSyABrNzrlu_dye66T-TVefG0eHIfOWEsr_A"
+# Configurações (lendo de variáveis de ambiente para segurança)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 FAVORITES_FILE = "favorites_data.json"
 ALERTS_FILE = "alerts_data.json"
 CHECK_INTERVAL = 30  # 30 segundos
@@ -115,10 +117,10 @@ def atualizar_dados_ativo(favorito):
 
 def analisar_oportunidade(favorito, dados_atuais):
     """Usa IA para analisar se é momento de comprar/vender."""
+    if not genai or not GEMINI_API_KEY:
+        return "⚠️ SDK da Google AI não carregado ou chave ausente."
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
+        client = genai.Client(api_key=GEMINI_API_KEY)
         plataforma = favorito.get('plataforma', '')
         
         if "DexScreener" in plataforma:
@@ -149,8 +151,10 @@ Responda APENAS com uma das opções abaixo + justificativa de 1 linha:
 Dados:
 {texto}
 """
-        
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=prompt
+        )
         return response.text.strip()
     
     except Exception as e:
