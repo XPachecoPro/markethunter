@@ -506,7 +506,7 @@ def mostrar_alertas_dinamicos():
 mostrar_alertas_dinamicos()
 
 # === TABS PRINCIPAIS ===
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Scanner", "⭐ Favoritos", "🚨 Alertas", "📰 Notícias"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎯 Scanner", "⭐ Favoritos", "📈 Ambiente", "🧮 Simulador", "🚨 Alertas", "📰 Notícias"])
 
 # Scanner functions
 def buscar_dados_dexscreener(termo_busca, liq_min, f_max):
@@ -796,9 +796,169 @@ with tab2:
                         st.warning(resultado)
 
 # ============================================================================
-# TAB 3: HISTÓRICO DE ALERTAS
+# TAB 3: AMBIENTE (Trading Dashboard)
 # ============================================================================
 with tab3:
+    st.title("📈 Ambiente de Trading")
+    st.caption("Gráficos interativos e indicadores técnicos em tempo real")
+    
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        col_asset, col_period = st.columns([2, 1])
+        with col_asset:
+            asset_options = {
+                "📊 Índices": ["^BVSP", "^GSPC", "^DJI", "^IXIC"],
+                "🪙 Crypto": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD"],
+                "🇧🇷 Brasil": ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA"],
+                "🇺🇸 EUA": ["AAPL", "GOOGL", "MSFT", "TSLA", "NVDA"]
+            }
+            categoria_ativo = st.selectbox("📂 Categoria:", list(asset_options.keys()))
+            ativo_chart = st.selectbox("🎯 Ativo:", asset_options[categoria_ativo])
+        
+        with col_period:
+            periodo = st.selectbox("📅 Período:", ["1mo", "3mo", "6mo", "1y"], index=1)
+        
+        if st.button("📊 Carregar Gráfico", type="primary", key="load_chart"):
+            with st.spinner(f"Carregando {ativo_chart}..."):
+                try:
+                    ticker = yf.Ticker(ativo_chart)
+                    hist = ticker.history(period=periodo)
+                    
+                    if not hist.empty:
+                        hist['SMA_20'] = hist['Close'].rolling(20).mean()
+                        hist['SMA_50'] = hist['Close'].rolling(50).mean()
+                        delta = hist['Close'].diff()
+                        gain = delta.where(delta > 0, 0).rolling(14).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                        hist['RSI'] = 100 - (100 / (1 + gain / loss))
+                        
+                        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                                          vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
+                        
+                        fig.add_trace(go.Candlestick(
+                            x=hist.index, open=hist['Open'], high=hist['High'],
+                            low=hist['Low'], close=hist['Close'], name='Preço'), row=1, col=1)
+                        fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA_20'], 
+                                               line=dict(color='orange', width=1), name='SMA 20'), row=1, col=1)
+                        fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA_50'],
+                                               line=dict(color='blue', width=1), name='SMA 50'), row=1, col=1)
+                        
+                        colors = ['green' if c >= o else 'red' for c, o in zip(hist['Close'], hist['Open'])]
+                        fig.add_trace(go.Bar(x=hist.index, y=hist['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
+                        fig.add_trace(go.Scatter(x=hist.index, y=hist['RSI'], line=dict(color='purple'), name='RSI'), row=3, col=1)
+                        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
+                        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
+                        
+                        fig.update_layout(height=600, showlegend=True, xaxis_rangeslider_visible=False)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("Preço", f"${hist['Close'].iloc[-1]:,.2f}")
+                        change_pct = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2] * 100)
+                        col2.metric("Variação", f"{change_pct:+.2f}%")
+                        col3.metric("RSI", f"{hist['RSI'].iloc[-1]:.1f}")
+                        col4.metric("Volume", f"{hist['Volume'].iloc[-1]:,.0f}")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+    except ImportError:
+        st.error("📦 Plotly não instalado.")
+
+
+# ============================================================================
+# TAB 4: SIMULADOR INTELIGENTE
+# ============================================================================
+with tab4:
+    st.title("🧮 Simulador Inteligente")
+    
+    st.warning("""
+    ⚠️ **AVISO IMPORTANTE**: Este simulador é uma ferramenta **educacional**. 
+    As análises e projeções NÃO constituem conselho financeiro. 
+    Invista apenas o que você pode perder.
+    """)
+    
+    if not st.session_state.favoritos:
+        st.info("⭐ Adicione ativos aos favoritos no Scanner para usar o simulador.")
+    else:
+        favoritos_opcoes = {f"{fav['symbol']} ({fav.get('plataforma', '')[:10]})": fav for fav in st.session_state.favoritos}
+        ativo_sim = st.selectbox("🎯 Selecione um favorito:", list(favoritos_opcoes.keys()), key="sim_asset")
+        fav = favoritos_opcoes[ativo_sim]
+        
+        st.markdown("---")
+        st.subheader("💰 Calculadora de Posição")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            capital = st.number_input("💵 Capital disponível ($)", value=1000.0, min_value=0.01)
+            risco_pct = st.slider("⚠️ Risco máximo (%)", 1, 20, 5)
+            preco_entrada = st.number_input("📈 Preço de entrada ($)", value=1.0, min_value=0.0001)
+        with col2:
+            stop_loss = st.number_input("🛑 Stop Loss ($)", value=0.9, min_value=0.0001)
+            take_profit = st.number_input("🎯 Take Profit ($)", value=1.2, min_value=0.0001)
+        
+        risco_valor = capital * (risco_pct / 100)
+        dif_stop = abs(preco_entrada - stop_loss)
+        posicao = risco_valor / dif_stop if dif_stop > 0 else 0
+        ganho = (take_profit - preco_entrada) * posicao
+        perda = dif_stop * posicao
+        rr_ratio = ganho / perda if perda > 0 else 0
+        
+        st.markdown("---")
+        st.subheader("📊 Resultado")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📦 Posição", f"{posicao:,.4f}")
+        c2.metric("💵 Valor", f"${posicao * preco_entrada:,.2f}")
+        c3.metric("🎯 Ganho", f"${ganho:,.2f}", delta=f"+{ganho/capital*100:.1f}%")
+        c4.metric("🛑 Perda", f"${perda:,.2f}", delta=f"-{perda/capital*100:.1f}%")
+        
+        if rr_ratio >= 3:
+            st.success(f"✅ R/R: {rr_ratio:.2f}:1 - **Excelente**")
+        elif rr_ratio >= 2:
+            st.info(f"🟡 R/R: {rr_ratio:.2f}:1 - **Bom**")
+        elif rr_ratio >= 1:
+            st.warning(f"⚠️ R/R: {rr_ratio:.2f}:1 - **Neutro**")
+        else:
+            st.error(f"❌ R/R: {rr_ratio:.2f}:1 - **Desfavorável**")
+        
+        st.markdown("---")
+        st.subheader("🧠 Análise IA")
+        
+        if st.button("🔮 Gerar Previsão", type="primary", key="sim_predict"):
+            if api_key and genai:
+                with st.spinner("Analisando..."):
+                    try:
+                        client = genai.Client(api_key=api_key)
+                        dados = fav.get('data', {})
+                        prompt = f"""
+Analise para investidor:
+- Ativo: {fav['symbol']}
+- Capital: ${capital}, Entrada: ${preco_entrada}, Stop: ${stop_loss}, Target: ${take_profit}
+- R/R: {rr_ratio:.2f}:1
+
+Dados: {json.dumps(dados, default=str)[:800]}
+
+Forneça:
+## 📊 Cenário Otimista (%)
+## 📉 Cenário Pessimista (%)  
+## 🎯 Mais Provável
+## ⚠️ Riscos
+## 💡 Recomendação
+
+DISCLAIMER: Não é conselho financeiro. Max 150 palavras.
+"""
+                        response = client.models.generate_content(model='gemini-3-flash-preview', contents=prompt)
+                        st.markdown(response.text)
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+            else:
+                st.error("⚠️ Configure a Gemini API Key.")
+
+# ============================================================================
+# TAB 5: HISTÓRICO DE ALERTAS
+# ============================================================================
+with tab5:
     st.title("🚨 Histórico de Alertas")
     
     alertas = carregar_alertas()
@@ -809,21 +969,20 @@ with tab3:
         for alerta in alertas[:20]:
             acao = alerta.get('acao', '')
             if acao == "COMPRAR":
-                st.success(f"🟢 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}... ({alerta.get('timestamp', '')})")
+                st.success(f"🟢 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}...")
             elif acao == "VENDER":
-                st.error(f"🔴 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}... ({alerta.get('timestamp', '')})")
+                st.error(f"🔴 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}...")
             else:
-                st.info(f"🟡 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}... ({alerta.get('timestamp', '')})")
+                st.info(f"🟡 **{alerta.get('symbol')}** - {alerta.get('mensagem', '')[:100]}...")
 
 # ============================================================================
-# TAB 4: NOTÍCIAS
+# TAB 6: NOTÍCIAS
 # ============================================================================
-with tab4:
+with tab6:
     st.title("📰 Notícias")
     
-    categoria = st.selectbox("📂 Categoria:",
-        options=["crypto", "stocks", "brazil"],
-        format_func=lambda x: {"crypto": "🪙 Crypto", "stocks": "📈 Global", "brazil": "🇧🇷 Brasil"}[x])
+    categoria = st.selectbox("📂 Categoria:", options=["crypto", "stocks", "brazil"],
+        format_func=lambda x: {"crypto": "🪙 Crypto", "stocks": "📈 Global", "brazil": "🇧🇷 Brasil"}[x], key="news_cat")
     
     if categoria not in st.session_state.news_cache:
         with st.spinner("Carregando..."):
@@ -839,4 +998,5 @@ with tab4:
 
 # Rodapé
 st.sidebar.markdown("---")
-st.sidebar.caption(f"🦅 v3.4 | {datetime.now().strftime('%H:%M')}")
+st.sidebar.caption(f"🦅 v4.0 | {datetime.now().strftime('%H:%M')}")
+
