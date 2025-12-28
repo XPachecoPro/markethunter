@@ -885,17 +885,37 @@ with tab4:
         ativo_sim = st.selectbox("🎯 Selecione um favorito:", list(favoritos_opcoes.keys()), key="sim_asset")
         fav = favoritos_opcoes[ativo_sim]
         
+        # Extrai preço atual dos dados do favorito
+        dados = fav.get('data', {})
+        plat = fav.get('plataforma', '')
+        
+        if "DexScreener" in plat:
+            preco_atual = float(dados.get('priceUsd', 0) or dados.get('priceNative', 0) or 0.0001)
+        elif "Binance" in plat:
+            preco_atual = float(dados.get('price', 0) or 0.0001)
+        else:
+            preco_atual = float(dados.get('price', 0) or 0.0001)
+        
+        # Valores sugeridos baseados no preço
+        preco_default = preco_atual if preco_atual > 0 else 1.0
+        stop_default = preco_default * 0.95  # -5%
+        target_default = preco_default * 1.10  # +10%
+        
         st.markdown("---")
         st.subheader("💰 Calculadora de Posição")
+        
+        # Exibe preço atual do ativo
+        if preco_atual > 0:
+            st.info(f"📊 **Preço atual de {fav['symbol']}**: ${preco_atual:,.6f}")
         
         col1, col2 = st.columns(2)
         with col1:
             capital = st.number_input("💵 Capital disponível ($)", value=1000.0, min_value=0.01)
             risco_pct = st.slider("⚠️ Risco máximo (%)", 1, 20, 5)
-            preco_entrada = st.number_input("📈 Preço de entrada ($)", value=1.0, min_value=0.0001)
+            preco_entrada = st.number_input("📈 Preço de entrada ($)", value=preco_default, min_value=0.0000001, format="%.6f")
         with col2:
-            stop_loss = st.number_input("🛑 Stop Loss ($)", value=0.9, min_value=0.0001)
-            take_profit = st.number_input("🎯 Take Profit ($)", value=1.2, min_value=0.0001)
+            stop_loss = st.number_input("🛑 Stop Loss ($)", value=stop_default, min_value=0.0000001, format="%.6f")
+            take_profit = st.number_input("🎯 Take Profit ($)", value=target_default, min_value=0.0000001, format="%.6f")
         
         risco_valor = capital * (risco_pct / 100)
         dif_stop = abs(preco_entrada - stop_loss)
