@@ -76,31 +76,98 @@ COUNTRY_FLAGS = {
 }
 
 def formatar_telefone(numero_raw, default_region="BR"):
-    """Formata número de telefone e detecta país."""
+    """
+    Formata número de telefone com detecção inteligente de país.
+    
+    Detecta automaticamente o país baseado no padrão do número:
+    - Brasil: 11 dígitos (DDD 2 + número 9 começando com 9)
+    - EUA/Canadá: 10 dígitos
+    - Portugal: 9 dígitos começando com 9
+    - Argentina: 10-11 dígitos começando com 9 ou 11
+    """
     if not numero_raw:
         return "", "", "🌍"
     
     # Remove caracteres não numéricos exceto +
     numero_limpo = ''.join(c for c in numero_raw if c.isdigit() or c == '+')
     
-    # Se não começar com +, assume Brasil
-    if not numero_limpo.startswith('+'):
-        numero_limpo = '+55' + numero_limpo
+    # Se já tem código de país, usa direto
+    if numero_limpo.startswith('+'):
+        try:
+            parsed = phonenumbers.parse(numero_limpo, default_region)
+            if phonenumbers.is_valid_number(parsed):
+                formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+                country_code = phonenumbers.region_code_for_number(parsed)
+                flag = COUNTRY_FLAGS.get(country_code, "🌍")
+                return formatted, country_code, flag
+        except:
+            pass
+        return numero_raw, "", "⚠️"
+    
+    # DETECÇÃO INTELIGENTE DE PAÍS
+    # Remove zeros à esquerda
+    numero_sem_zero = numero_limpo.lstrip('0')
+    
+    ddi_detectado = None
+    pais_detectado = None
+    
+    # Brasil: 11 dígitos (DDD 2 dígitos + 9 dígitos começando com 9)
+    # Exemplo: 11999999999
+    if len(numero_sem_zero) == 11 and numero_sem_zero[2] == '9':
+        ddi_detectado = "+55"
+        pais_detectado = "BR"
+    
+    # Brasil: 10 dígitos (DDD 2 + 8 dígitos - telefone fixo)
+    elif len(numero_sem_zero) == 10 and numero_sem_zero[0:2].isdigit():
+        ddi_detectado = "+55"
+        pais_detectado = "BR"
+    
+    # EUA/Canadá: 10 dígitos
+    elif len(numero_sem_zero) == 10:
+        ddi_detectado = "+1"
+        pais_detectado = "US"
+    
+    # Portugal: 9 dígitos começando com 9 (móvel)
+    elif len(numero_sem_zero) == 9 and numero_sem_zero.startswith('9'):
+        ddi_detectado = "+351"
+        pais_detectado = "PT"
+    
+    # Espanha: 9 dígitos começando com 6 ou 7 (móvel)
+    elif len(numero_sem_zero) == 9 and numero_sem_zero[0] in ['6', '7']:
+        ddi_detectado = "+34"
+        pais_detectado = "ES"
+    
+    # Argentina: 10 dígitos começando com 9 ou 11
+    elif len(numero_sem_zero) in [10, 11] and numero_sem_zero.startswith(('9', '11')):
+        ddi_detectado = "+54"
+        pais_detectado = "AR"
+    
+    # México: 10 dígitos
+    elif len(numero_sem_zero) == 10 and numero_sem_zero[0] in ['1', '2', '3', '4', '5', '6', '7', '8']:
+        ddi_detectado = "+52"
+        pais_detectado = "MX"
+    
+    # Default: Brasil
+    else:
+        ddi_detectado = "+55"
+        pais_detectado = "BR"
+    
+    # Tenta parsear com o DDI detectado
+    numero_completo = ddi_detectado + numero_sem_zero
     
     try:
-        parsed = phonenumbers.parse(numero_limpo, default_region)
+        parsed = phonenumbers.parse(numero_completo, pais_detectado)
         
-        if not phonenumbers.is_valid_number(parsed):
-            return numero_raw, "", "⚠️"
-        
-        # Formata no padrão internacional
-        formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
-        
-        # Detecta país
-        country_code = phonenumbers.region_code_for_number(parsed)
-        flag = COUNTRY_FLAGS.get(country_code, "🌍")
-        
-        return formatted, country_code, flag
+        if phonenumbers.is_valid_number(parsed):
+            # Formata no padrão internacional
+            formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+            country_code = phonenumbers.region_code_for_number(parsed)
+            flag = COUNTRY_FLAGS.get(country_code, "🌍")
+            return formatted, country_code, flag
+        else:
+            # Número inválido mas mostra o que detectou
+            flag = COUNTRY_FLAGS.get(pais_detectado, "⚠️")
+            return f"{ddi_detectado} {numero_raw}", pais_detectado, flag
     except:
         return numero_raw, "", "⚠️"
 
