@@ -1,0 +1,471 @@
+###############################################################################
+# FILE: app.py
+###############################################################################
+import streamlit as st
+import requests
+import json
+import google.generativeai as genai
+import pandas as pd
+
+# CONFIGURAÇÃO DE PÁGINA
+st.set_page_config(page_title="MarketHunter - Sniper AI", layout="wide")
+
+# TAREFA 2: INTERFACE DE CONFIGURAÇÃO (SIDEBAR)
+st.sidebar.title("🛠 Configurações")
+api_key = st.sidebar.text_input("Google Gemini API Key", type="password")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Parâmetros do Sniper")
+query = st.sidebar.text_input("Termo de Busca (ex: solana, pepe)", value="solana")
+liquidez_min = st.sidebar.number_input("Liquidez Mínima ($)", value=10000)
+fdv_max = st.sidebar.number_input("FDV Máximo ($)", value=10000000)
+
+# FUNÇÕES DE BACKEND (DA TAREFA ANTERIOR)
+def buscar_dados_dexscreener(termo_busca):
+    url = f"https://api.dexscreener.com/latest/dex/search?q={termo_busca}"
+    try:
+        response = requests.get(url)
+        return response.json().get('pairs', [])
+    except Exception as e:
+        st.error(f"Erro ao buscar dados: {e}")
+        return []
+
+def aplicar_filtro_sniper(pairs, liq_min, f_max):
+    candidatos = []
+    for pair in pairs:
+        try:
+            liquidez = float(pair.get('liquidity', {}).get('usd', 0))
+            fdv = float(pair.get('fdv', 0))
+            vol_24h = pair.get('volume', {}).get('h24', 0)
+            vol_1h = pair.get('volume', {}).get('h1', 0)
+            var_preco_1h = pair.get('priceChange', {}).get('h1', 0)
+            
+            if liquidez < liq_min or fdv > f_max or vol_24h == 0:
+                continue
+                
+            media_vol_hora = vol_24h / 24
+            if media_vol_hora < 100: continue
+            
+            if vol_1h > (3 * media_vol_hora) and (-3 < var_preco_1h < 3):
+                candidatos.append(pair)
+        except:
+            continue
+    return candidatos
+
+# TAREFA 3: CRIAÇÃO DA FUNÇÃO DE ANÁLISE (BACKEND)
+def gerar_analise_ia(token_data, key):
+    if not key:
+        return "⚠️ Erro: Informe a Gemini API Key na barra lateral."
+    
+    try:
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel('gemini-3-flash-preview')
+        
+        # Preparando os dados para o prompt
+        sys_prompt = (
+            "Você é um Analista de Risco de Criptoativos (Auditor). Vou te passar dados de um token "
+            "recém-detectado com volume anômalo. Sua tarefa é:\n"
+            "1. Analisar o nome/ticker: Parece um projeto sério ou um meme/golpe óbvio?\n"
+            "2. Analisar as métricas: A liquidez é saudável para o valor de mercado (FDV)? "
+            "A relação Volume/Liquidez é suspeita (wash trading)?\n"
+            "3. Dar um Veredito: 'ALTO RISCO', 'OBSERVAR' ou 'POTENCIAL GEMA'.\n"
+            "4. Seja curto e direto (máximo 3 frases)."
+        )
+        
+        texto_token = f"""
+        Token: {token_data['baseToken']['name']} ({token_data['baseToken']['symbol']})
+        DEX: {token_data['dexId']} | Rede: {token_data['chainId']}
+        Liquidez: ${token_data['liquidity']['usd']:,.2f}
+        FDV: ${token_data.get('fdv', 0):,.2f}
+        Volume 1h: ${token_data['volume']['h1']:,.2f} | Volume 24h: ${token_data['volume']['h24']:,.2f}
+        Variação Preço 1h: {token_data['priceChange']['h1']}%
+        """
+        
+        response = model.generate_content([sys_prompt, texto_token])
+        return response.text
+    except Exception as e:
+        return f"❌ Erro na análise: {str(e)}"
+
+# UI PRINCIPAL
+st.title("🏹 MarketHunter - Sniper AI")
+st.write("Detectando baleias e acumulações silenciosas em tempo real.")
+
+if st.button("🚀 Iniciar Scanner Sniper"):
+    with st.spinner("Varrendo a rede..."):
+        dados = buscar_dados_dexscreener(query)
+        oportunidades = aplicar_filtro_sniper(dados, liquidez_min, fdv_max)
+        
+    if oportunidades:
+        st.success(f"Encontradas {len(oportunidades)} oportunidades!")
+        
+        for idx, op in enumerate(oportunidades):
+            with st.container():
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    st.subheader(f"{op['baseToken']['symbol']} ({op['dexId']})")
+                    st.write(f"🔗 [Ver no DexScreener]({op['url']})")
+                
+                with col2:
+                    vol_ratio = op['volume']['h1'] / (op['volume']['h24']/24)
+                    st.write(f"🌊 **Volume 1h:** {vol_ratio:.1f}x acima da média")
+                    st.write(f"⚓ **Preço 1h:** {op['priceChange']['h1']}%")
+                
+                with col3:
+                    # TAREFA 4: INTEGRAÇÃO NA UI (FRONTEND)
+                    if st.button(f"🧠 Analisar {op['baseToken']['symbol']}", key=f"bt_{idx}"):
+                        if not api_key:
+                            st.warning("Insira sua Gemini API Key na barra lateral para usar a IA.")
+                        else:
+                            veredito = gerar_analise_ia(op, api_key)
+                            if "ALTO RISCO" in veredito:
+                                st.warning(veredito)
+                            elif "POTENCIAL GEMA" in veredito:
+                                st.success(veredito)
+                            else:
+                                st.info(veredito)
+                
+                st.markdown("---")
+    else:
+        st.info("Nenhuma acumulação detectada com os filtros atuais.")
+
+###############################################################################
+# FILE: dex_logic.py
+###############################################################################
+import requests
+from datetime import datetime, timezone, timedelta
+
+def check_new_liquidity_pools(liquidity_min=50000):
+    """
+    Regra B: Detecção de Liquidez (Liquidity Snipe)
+    Filtro: Pool criada há menos de 1h, Liquidez > $50.000.
+    """
+    url = "https://api.geckoterminal.com/api/v2/networks/new_pools"
+    headers = {'Accept': 'application/json;version=20230203'}
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            print(f"Erro ao acessar GeckoTerminal: {response.status_code}")
+            return []
+            
+        data = response.json()
+        new_valid_pools = []
+        
+        now = datetime.now(timezone.utc)
+        
+        for pool in data.get('data', []):
+            attr = pool.get('attributes', {})
+            created_at_str = attr.get('pool_created_at')
+            liquidity = float(attr.get('reserve_in_usd') or 0)
+            name = attr.get('name')
+            
+            if not created_at_str:
+                continue
+                
+            # Exemplo de string: "2023-05-24T14:15:22.000Z"
+            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            
+            age = now - created_at
+            
+            # Filtro: Menos de 1 hora e Liquidez > 50k
+            if age < timedelta(hours=1) and liquidity > liquidity_min:
+                new_valid_pools.append({
+                    'name': name,
+                    'liquidity': liquidity,
+                    'age_minutes': age.total_seconds() / 60,
+                    'address': pool.get('id'),
+                    'network': pool.get('relationships', {}).get('network', {}).get('data', {}).get('id')
+                })
+                
+        return new_valid_pools
+    except Exception as e:
+        print(f"Erro na Regra B: {e}")
+        return []
+
+if __name__ == "__main__":
+    pools = check_new_liquidity_pools()
+    if pools:
+        for p in pools:
+            print(f"✅ Lançamento Potencial Detectado: {p['name']} | Liquidez: ${p['liquidity']:,.2f} | Rede: {p['network']} | Criada há {p['age_minutes']:.1f} min")
+    else:
+        print("Nenhuma pool nova com alta liquidez encontrada nos últimos 60 min.")
+
+###############################################################################
+# FILE: dex_scanner.py
+###############################################################################
+import requests
+import json
+import time
+
+def scan_dexscreener(query="solana"):
+    """
+    Varre pares recentes no DexScreener e aplica o filtro de 'Acumulação Silenciosa'.
+    """
+    url = f"https://api.dexscreener.com/latest/dex/search?q={query}"
+    
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"Erro ao acessar DexScreener: {response.status_code}")
+            return []
+            
+        data = response.json()
+        pairs = data.get('pairs', [])
+        opportunities = []
+        
+        for pair in pairs:
+            # 1. Filtros Anti-Golpe (Rug Pull Check)
+            liquidity = float(pair.get('liquidity', {}).get('usd', 0))
+            fdv = float(pair.get('fdv', 0))
+            
+            # Liquidez > $10.000 E FDV < $5.000.000
+            if liquidity < 10000 or (fdv > 5000000 or fdv == 0):
+                continue
+                
+            # 2. Dados de Volume e Preço
+            vol_h1 = float(pair.get('volume', {}).get('h1', 0))
+            vol_h24 = float(pair.get('volume', {}).get('h24', 0))
+            price_change_h1 = float(pair.get('priceChange', {}).get('h1', 0))
+            
+            # 3. Cálculo da Média Esperada (Volume h24 / 24)
+            avg_vol_h1_expected = vol_h24 / 24 if vol_h24 > 0 else 0
+            
+            if avg_vol_h1_expected == 0:
+                continue
+                
+            # 4. Identificação da Anomalia: Volume h1 > 3x Média
+            vol_anomaly_ratio = vol_h1 / avg_vol_h1_expected
+            
+            # 5. Filtro de Preço (A Mola): abs(priceChange.h1) < 3%
+            price_stability = abs(price_change_h1) < 3.0
+            
+            if vol_anomaly_ratio > 3.0 and price_stability:
+                opportunities.append({
+                    "symbol": pair.get('baseToken', {}).get('symbol'),
+                    "pairAddress": pair.get('pairAddress'),
+                    "dex": pair.get('dexId'),
+                    "url": pair.get('url'),
+                    "reason": f"Volume 1h (${vol_h1:,.0f}) é {vol_anomaly_ratio:.1f}x maior que a média, preço variou apenas {price_change_h1:.2f}%."
+                })
+                
+        return opportunities
+        
+    except Exception as e:
+        print(f"Erro no scanner DexScreener: {e}")
+        return []
+
+if __name__ == "__main__":
+    # Teste de busca por moedas na rede Solana (comum para novos lançamentos)
+    print("🔎 Iniciando Busca Sniper no DexScreener (Solana)...")
+    results = scan_dexscreener("solana")
+    
+    if results:
+        print(f"🎯 {len(results)} OPORTUNIDADES ENCONTRADAS:")
+        print(json.dumps(results, indent=2))
+    else:
+        print("Nenhuma oportunidade detectada com os critérios atuais.")
+
+###############################################################################
+# FILE: main.py
+###############################################################################
+from sniper_logic import check_accumulation_pattern
+from dex_logic import check_new_liquidity_pools
+from dex_scanner import scan_dexscreener
+from wallet_logic import SmartMoneyWatcher
+import time
+
+# Lista de moedas para monitorar (CEX - Regra A)
+WATCHLIST_CEX = [
+    'BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'ADA/USDT', 
+    'XRP/USDT', 'DOT/USDT', 'DOGE/USDT', 'AVAX/USDT', 'LINK/USDT'
+]
+
+# Lista de carteiras para monitorar (Regra C)
+WATCHLIST_WALLETS = [
+    "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B", # Exemplo: Vitalik
+]
+
+def run_scanner():
+    print("🚀 SniperBot Early Detection System Ativado!")
+    print("-" * 60)
+    
+    # Inicializa o watcher de carteiras
+    wallet_watcher = SmartMoneyWatcher(watch_list=WATCHLIST_WALLETS)
+    # Primeiro run para mapear o estado atual (sem alertar tudo de uma vez)
+    wallet_watcher.check_smart_money_movements()
+    
+    while True:
+        # --- REGRA A: ACUMULAÇÃO CEX ---
+        print("\n[VARRAGEM] Verificando Regra A (CEX)...")
+        for symbol in WATCHLIST_CEX:
+            result = check_accumulation_pattern(symbol)
+            if result and result['is_accumulating']:
+                print(f"⚠️ ALERTA DE ACUMULAÇÃO (Regra A): {result['symbol']} | "
+                      f"Volume 1h: {result['vol_increase_ratio']:.2f}x | "
+                      f"Volatilidade: {result['volatilidade_pct']:.2f}% | "
+                      f"Potencial de Explosão Iminente")
+
+        # --- REGRA B: NOVAS POOLS DEX (GeckoTerminal) ---
+        print("[VARRAGEM] Verificando Regra B (DEX - New Pools)...")
+        dex_pools = check_new_liquidity_pools(liquidity_min=50000)
+        for pool in dex_pools:
+            print(f"🔥 LANÇAMENTO POTENCIAL (Regra B): {pool['name']} | "
+                  f"Liquidez: ${pool['liquidity']:,.2f} | "
+                  f"Rede: {pool['network']} | "
+                  f"Criada há {pool['age_minutes']:.1f} min")
+
+        # --- SNIPER MODE: DEXSCREENER SEARCH ---
+        print("[VARRAGEM] Verificando Sniper Mode (DexScreener)...")
+        dex_opportunities = scan_dexscreener("solana") # Busca por moedas no ecossistema Solana
+        for opp in dex_opportunities:
+            print(f"🎯 OPORTUNIDADE SNIPER: {opp['symbol']} | "
+                  f"DEX: {opp['dex']} | "
+                  f"Motivo: {opp['reason']}")
+
+        # --- REGRA C: SMART MONEY ---
+        print("[VARRAGEM] Verificando Regra C (Wallets)...")
+        wallet_alerts = wallet_watcher.check_smart_money_movements()
+        for alert in wallet_alerts:
+            print(f"🚨 ALERTA MÁXIMO (Regra C): Carteira {alert['wallet'][:10]}... "
+                  f"comprou novo token {alert['token']}! "
+                  f"Contrato: {alert['contract']}")
+            
+        print("\n" + "="*60)
+        print(f"[INFO] Scan completo em {time.strftime('%H:%M:%S')}. Próximo scan em 5 minutos...")
+        time.sleep(300)
+
+if __name__ == "__main__":
+    try:
+        run_scanner()
+    except KeyboardInterrupt:
+        print("\nBot parado pelo usuário.")
+    except Exception as e:
+        print(f"Erro crítico no loop principal: {e}")
+
+###############################################################################
+# FILE: sniper_logic.py
+###############################################################################
+import ccxt
+import pandas as pd
+import time
+
+def check_accumulation_pattern(symbol, timeframe='1h', volume_threshold=3.0, price_threshold=0.02, periodo_media=20):
+    """
+    Regra A Refinada: Detecção de Acumulação Furtiva.
+    - Gatilho: Volume > 300% da média das últimas 20 velas.
+    - Condição: Volatilidade (High-Low) < 2%.
+    """
+    try:
+        # Usamos Binance como padrão, mas pode ser expandido
+        exchange = ccxt.binance()
+        
+        # Buscamos 30 velas para garantir que temos o período de média (20) + margem
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=30)
+        
+        if not ohlcv or len(ohlcv) < periodo_media:
+            return None
+            
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        
+        # 1. Cálculos de Média e Volatilidade
+        df['vol_sma'] = df['volume'].rolling(window=periodo_media).mean()
+        df['volatilidade'] = (df['high'] - df['low']) / df['open']
+        
+        # 2. Análise da Última Vela Fechada (iloc[-2] pois -1 é a vela em formação)
+        ultima_vela = df.iloc[-2]
+        
+        vol_increase_ratio = ultima_vela['volume'] / ultima_vela['vol_sma']
+        volatilidade_pct = ultima_vela['volatilidade'] * 100
+        
+        is_accumulating = (vol_increase_ratio > volume_threshold) and (ultima_vela['volatilidade'] < price_threshold)
+        
+        return {
+            'symbol': symbol,
+            'vol_increase_ratio': vol_increase_ratio,
+            'volatilidade_pct': volatilidade_pct,
+            'is_accumulating': is_accumulating,
+            'current_vol': ultima_vela['volume'],
+            'avg_vol': ultima_vela['vol_sma']
+        }
+    except Exception as e:
+        # print(f"Erro ao verificar {symbol}: {e}") # Silencioso no scanner principal
+        return None
+
+if __name__ == "__main__":
+    # Teste rápido com BTC/USDT
+    print("Testando lógica refinada com BTC/USDT...")
+    result = check_accumulation_pattern('BTC/USDT')
+    if result:
+        print(f"Resultado: {result}")
+        if result['is_accumulating']:
+            print(f"🎯 OPORTUNIDADE ENCONTRADA! {result['symbol']}")
+            print(f"Motivo: Volume {result['vol_increase_ratio']:.2f}x acima da média detectado enquanto volatilidade foi de apenas {result['volatilidade_pct']:.2f}%")
+        else:
+            print("Padrão de acumulação furtiva não detectado no momento.")
+
+###############################################################################
+# FILE: wallet_logic.py
+###############################################################################
+import requests
+import time
+
+class SmartMoneyWatcher:
+    def __init__(self, watch_list=None, etherscan_api_key="YOUR_API_KEY"):
+        self.watch_list = watch_list or []
+        self.api_key = etherscan_api_key
+        # Dicionário para guardar os tokens que a carteira já possui
+        self.wallet_history = {address: set() for address in self.watch_list}
+
+    def check_smart_money_movements(self):
+        alerts = []
+        for address in self.watch_list:
+            # print(f"Monitorando carteira: {address}") # Debug
+            txs = self.get_latest_token_transactions(address)
+            
+            for tx in txs:
+                token_symbol = tx.get('tokenSymbol')
+                token_address = tx.get('contractAddress')
+                
+                # Se for uma transação de entrada (compra/recebimento)
+                if tx.get('to').lower() == address.lower():
+                    if token_address not in self.wallet_history[address]:
+                        # Primeiro registro ou token novo detectado
+                        # Para o primeiro scan, apenas populamos o histórico
+                        if len(self.wallet_history[address]) > 0:
+                            alerts.append({
+                                'wallet': address,
+                                'token': token_symbol,
+                                'contract': token_address
+                            })
+                        self.wallet_history[address].add(token_address)
+        return alerts
+
+    def get_latest_token_transactions(self, address):
+        """
+        Busca as últimas transações de tokens ERC-20 via Etherscan API.
+        """
+        if self.api_key == "YOUR_API_KEY":
+            # Mock para demonstração se não houver chave
+            return []
+            
+        url = f"https://api.etherscan.io/api?module=account&action=tokentx&address={address}&page=1&offset=10&sort=desc&apikey={self.api_key}"
+        
+        try:
+            response = requests.get(url)
+            data = response.json()
+            if data.get('status') == '1':
+                return data.get('result', [])
+            return []
+        except Exception as e:
+            print(f"Erro ao buscar transações: {e}")
+            return []
+
+if __name__ == "__main__":
+    # Exemplo de uso
+    watcher = SmartMoneyWatcher(watch_list=["0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"]) # Vitalik (Exemplo)
+    print("Iniciando monitoramento de Smart Money...")
+    # No primeiro run, ele apenas mapeia o que já tem. 
+    # Em runs subsequentes, ele alerta para tokens novos.
+    watcher.check_smart_money_movements()
+    print("Mapeamento inicial concluído. Aguardando novas movimentações...")
