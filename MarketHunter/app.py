@@ -870,13 +870,7 @@ with tab3:
 # TAB 4: SIMULADOR INTELIGENTE
 # ============================================================================
 with tab4:
-    st.title("🧮 Simulador Inteligente")
-    
-    st.warning("""
-    ⚠️ **AVISO IMPORTANTE**: Este simulador é uma ferramenta **educacional**. 
-    As análises e projeções NÃO constituem conselho financeiro. 
-    Invista apenas o que você pode perder.
-    """)
+    st.title("🧮 Simulador de Operações")
     
     if not st.session_state.favoritos:
         st.info("⭐ Adicione ativos aos favoritos no Scanner para usar o simulador.")
@@ -926,26 +920,23 @@ with tab4:
             stop_loss = st.number_input("🛑 Stop Loss ($)", value=stop_default, min_value=0.0000001, format="%.6f")
             take_profit = st.number_input("🎯 Take Profit ($)", value=target_default, min_value=0.0000001, format="%.6f")
         
-        # Cálculos corrigidos
+        # Cálculos
         valor_investido = quantidade * preco_entrada
-        
-        # Ganho/Perda por unidade
         ganho_por_unidade = take_profit - preco_entrada
         perda_por_unidade = preco_entrada - stop_loss
-        
-        # Ganho/Perda total
         ganho_total = ganho_por_unidade * quantidade
         perda_total = perda_por_unidade * quantidade
-        
-        # Percentuais
         ganho_pct = (ganho_por_unidade / preco_entrada) * 100 if preco_entrada > 0 else 0
         perda_pct = (perda_por_unidade / preco_entrada) * 100 if preco_entrada > 0 else 0
-        
-        # Risco/Recompensa
         rr_ratio = ganho_por_unidade / perda_por_unidade if perda_por_unidade > 0 else 0
         
+        # Métricas adicionais
+        breakeven = preco_entrada
+        target_move = ((take_profit - preco_entrada) / preco_entrada) * 100
+        stop_move = ((preco_entrada - stop_loss) / preco_entrada) * 100
+        
         st.markdown("---")
-        st.subheader("📊 Resultado da Simulação")
+        st.subheader("📊 Análise da Operação")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("📦 Quantidade", f"{quantidade:,.4f}")
@@ -953,43 +944,63 @@ with tab4:
         c3.metric("🎯 Ganho Potencial", f"${ganho_total:,.2f}", delta=f"+{ganho_pct:.2f}%")
         c4.metric("🛑 Perda Potencial", f"${perda_total:,.2f}", delta=f"-{perda_pct:.2f}%")
         
+        # Métricas de risco
+        st.markdown("### 📈 Métricas de Risco")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("⚖️ R/R Ratio", f"{rr_ratio:.2f}:1")
+        m2.metric("📉 Distância Stop", f"-{stop_move:.2f}%")
+        m3.metric("📈 Distância Target", f"+{target_move:.2f}%")
+        m4.metric("💰 Breakeven", f"${breakeven:,.6f}")
+        
         if rr_ratio >= 3:
-            st.success(f"✅ Risco/Recompensa: {rr_ratio:.2f}:1 - **Excelente**")
+            st.success(f"✅ Risco/Recompensa: {rr_ratio:.2f}:1 - **Operação favorável**")
         elif rr_ratio >= 2:
-            st.info(f"🟡 Risco/Recompensa: {rr_ratio:.2f}:1 - **Bom**")
+            st.info(f"🟡 Risco/Recompensa: {rr_ratio:.2f}:1 - **Aceitável**")
         elif rr_ratio >= 1:
-            st.warning(f"⚠️ Risco/Recompensa: {rr_ratio:.2f}:1 - **Neutro**")
+            st.warning(f"⚠️ Risco/Recompensa: {rr_ratio:.2f}:1 - **Marginal**")
         else:
-            st.error(f"❌ Risco/Recompensa: {rr_ratio:.2f}:1 - **Desfavorável**")
+            st.error(f"❌ Risco/Recompensa: {rr_ratio:.2f}:1 - **Operação desfavorável**")
         
         st.markdown("---")
-        st.subheader("🧠 Análise IA")
+        st.subheader("🧠 Análise Técnica IA")
         
-        if st.button("🔮 Gerar Previsão", type="primary", key="sim_predict"):
+        if st.button("📊 Analisar Operação", type="primary", key="sim_predict"):
             if api_key and genai:
-                with st.spinner("Analisando..."):
+                with st.spinner("Processando análise..."):
                     try:
                         client = genai.Client(api_key=api_key)
                         dados_fav = fav.get('data', {})
                         prompt = f"""
-Analise esta simulação de investimento:
+Você é um analista quantitativo. Analise esta operação de forma objetiva e direta:
+
+DADOS DA OPERAÇÃO:
 - Ativo: {fav['symbol']}
 - Quantidade: {quantidade:.4f} unidades
-- Valor investido: ${valor_investido:,.2f}
+- Capital: ${valor_investido:,.2f}
 - Entrada: ${preco_entrada:.6f}
-- Stop Loss: ${stop_loss:.6f} (perda: ${perda_total:,.2f}, -{perda_pct:.2f}%)
-- Take Profit: ${take_profit:.6f} (ganho: ${ganho_total:,.2f}, +{ganho_pct:.2f}%)
-- R/R: {rr_ratio:.2f}:1
+- Stop Loss: ${stop_loss:.6f} (-{perda_pct:.2f}%, perda: ${perda_total:,.2f})
+- Take Profit: ${take_profit:.6f} (+{ganho_pct:.2f}%, ganho: ${ganho_total:,.2f})
+- Risco/Recompensa: {rr_ratio:.2f}:1
 
-Dados do ativo: {json.dumps(dados_fav, default=str)[:600]}
+DADOS DO ATIVO:
+{json.dumps(dados_fav, default=str)[:800]}
 
-Forneça:
-## 📊 Análise da Operação
-## 🎯 Cenário Mais Provável
-## ⚠️ Pontos de Atenção
-## 💡 Recomendação
+Forneça análise DIRETA e TÉCNICA:
 
-DISCLAIMER: Simulação educacional. NÃO é conselho financeiro. Max 150 palavras.
+## 📊 PARECER DA OPERAÇÃO
+[FAVORÁVEL/NEUTRO/DESFAVORÁVEL] - Justificativa matemática
+
+## 📈 PONTOS DE ENTRADA/SAÍDA
+- Avalie se os níveis estão bem posicionados
+
+## ⚠️ RISCOS IDENTIFICADOS
+- Liste riscos objetivos baseados nos dados
+
+## 🎯 RECOMENDAÇÃO
+- Ação clara: ENTRAR, AGUARDAR ou EVITAR
+- Se ENTRAR, ajustes sugeridos nos níveis
+
+Seja direto. Máximo 180 palavras.
 """
                         response = client.models.generate_content(model='gemini-3-flash-preview', contents=prompt)
                         st.markdown(response.text)
