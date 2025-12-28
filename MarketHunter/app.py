@@ -379,9 +379,14 @@ st.sidebar.markdown("---")
 # API Key (lendo de st.secrets para segurança)
 try:
     api_key = st.secrets["gemini"]["api_key"]
-except:
+    if api_key and len(api_key) > 10:
+        st.sidebar.success(f"✅ Gemini: ...{api_key[-8:]}")
+    else:
+        st.sidebar.warning("⚠️ Gemini Key vazia!")
+        api_key = ""
+except Exception as e:
     api_key = ""
-    st.sidebar.error("⚠️ Gemini API Key não encontrada nos Secrets!")
+    st.sidebar.error(f"⚠️ Gemini Key não encontrada: {e}")
 
 # Monitor Status
 st.sidebar.markdown("---")
