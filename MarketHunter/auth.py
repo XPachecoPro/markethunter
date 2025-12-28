@@ -108,10 +108,13 @@ def adicionar_favorito_db(user_id: str, fav: dict):
             "plataforma": fav.get('plataforma'),
             "asset_data": fav.get('data')
         }
-        result = supabase.table("favorites").insert(data).execute()
+        # Usa upsert para evitar duplicatas
+        result = supabase.table("favorites").upsert(data, on_conflict="asset_key,user_id").execute()
         return bool(result.data)
     except Exception as e:
+        import traceback
         print(f"Erro ao adicionar favorito: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         return False
 
 def remover_favorito_db(user_id: str, asset_key: str):
