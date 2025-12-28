@@ -285,6 +285,12 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📡 Monitor")
 st.sidebar.metric("⭐ Favoritos", len(st.session_state.favoritos))
 
+def carregar_alertas():
+    """Busca alertas do usuário via Supabase."""
+    if st.session_state.user:
+        return buscar_alertas_usuario(st.session_state.user['id'])
+    return []
+
 # Verifica alertas do monitor
 alertas = carregar_alertas()
 
