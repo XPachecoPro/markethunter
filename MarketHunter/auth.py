@@ -3,18 +3,25 @@ import hashlib
 from supabase import create_client, Client
 
 # Configurações do Supabase (lendo de st.secrets para segurança)
+SUPABASE_URL = ""
+SUPABASE_KEY = ""
+_AUTH_ERROR = None
+
 try:
     SUPABASE_URL = st.secrets["supabase"]["url"]
     SUPABASE_KEY = st.secrets["supabase"]["key"]
-except:
-    # Fallback para evitar erro imediato, mas pedirá configuração
-    SUPABASE_URL = ""
-    SUPABASE_KEY = ""
+except KeyError as e:
+    _AUTH_ERROR = f"Chave não encontrada em secrets: {e}"
+except Exception as e:
+    _AUTH_ERROR = f"Erro ao carregar secrets: {type(e).__name__}: {e}"
 
 def get_supabase_client() -> Client:
     """Retorna cliente Supabase."""
+    if _AUTH_ERROR:
+        st.error(f"⚠️ Erro de configuração: {_AUTH_ERROR}")
+        st.stop()
     if not SUPABASE_URL or not SUPABASE_KEY:
-        st.error("⚠️ Configurações do Supabase não encontradas nos Secrets!")
+        st.error("⚠️ URL ou Key do Supabase estão vazios!")
         st.stop()
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
