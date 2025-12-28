@@ -1243,10 +1243,55 @@ with tab2:
         st.success(f"📊 {len(st.session_state.favoritos)} ativos monitorados")
         st.caption("💡 Execute o monitor em segundo plano para receber alertas no Telegram")
         
-        # Comando para iniciar o monitor
-        with st.expander("📡 Como ativar alertas automáticos"):
+        # Comando para iniciar o monitor e teste de Telegram
+        with st.expander("📡 Configurar Alertas Telegram"):
             st.code("./.venv/bin/python MarketHunter/favorites_monitor.py", language="bash")
             st.write("Execute este comando em um terminal separado para receber alertas de COMPRA/VENDA no Telegram.")
+            
+            st.divider()
+            
+            # Verificar configuração do Telegram
+            try:
+                tg_token = st.secrets.get("telegram", {}).get("bot_token", "")
+                tg_chat = st.secrets.get("telegram", {}).get("chat_id", "")
+                
+                if tg_token and tg_chat:
+                    st.success(f"✅ Telegram configurado: Chat ID `{tg_chat[:6]}...`")
+                    
+                    if st.button("🧪 Testar Notificação Telegram", type="primary"):
+                        with st.spinner("Enviando mensagem de teste..."):
+                            try:
+                                import requests
+                                url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
+                                payload = {
+                                    "chat_id": tg_chat,
+                                    "text": f"🦅 *MarketHunter Test*\n\nSua configuração de alertas está funcionando!\n\n⏰ {datetime.now().strftime('%H:%M:%S')}",
+                                    "parse_mode": "Markdown"
+                                }
+                                response = requests.post(url, json=payload, timeout=10)
+                                if response.status_code == 200:
+                                    st.success("✅ Mensagem enviada! Verifique seu Telegram.")
+                                else:
+                                    st.error(f"❌ Erro: {response.text}")
+                            except Exception as e:
+                                st.error(f"❌ Erro ao enviar: {str(e)}")
+                else:
+                    st.warning("⚠️ Telegram não configurado!")
+                    st.markdown("""
+Configure no arquivo `secrets.toml`:
+```toml
+[telegram]
+bot_token = "SEU_BOT_TOKEN"
+chat_id = "SEU_CHAT_ID"
+```
+
+**Como obter:**
+1. Crie um bot no [@BotFather](https://t.me/BotFather) e copie o token
+2. Inicie conversa com seu bot
+3. Acesse `https://api.telegram.org/bot<TOKEN>/getUpdates` para pegar o chat_id
+                    """)
+            except Exception as e:
+                st.error(f"⚠️ Erro ao verificar configuração: {e}")
         
         for fav in st.session_state.favoritos:
             key = fav['key']
