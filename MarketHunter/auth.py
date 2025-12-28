@@ -101,15 +101,29 @@ def adicionar_favorito_db(user_id: str, fav: dict):
     """Adiciona um favorito ao banco de dados relacional."""
     try:
         supabase = get_supabase_client()
-        data = {
-            "user_id": user_id,
-            "asset_key": fav.get('key'),
-            "symbol": fav.get('symbol'),
-            "plataforma": fav.get('plataforma'),
-            "asset_data": fav.get('data')
-        }
-        # Usa upsert para evitar duplicatas
-        result = supabase.table("favorites").upsert(data, on_conflict="asset_key,user_id").execute()
+        asset_key = fav.get('key')
+        
+        # Verifica se já existe
+        existing = supabase.table("favorites").select("id").eq("user_id", user_id).eq("asset_key", asset_key).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            # Já existe, atualiza
+            result = supabase.table("favorites").update({
+                "symbol": fav.get('symbol'),
+                "plataforma": fav.get('plataforma'),
+                "asset_data": fav.get('data')
+            }).eq("user_id", user_id).eq("asset_key", asset_key).execute()
+        else:
+            # Não existe, insere
+            data = {
+                "user_id": user_id,
+                "asset_key": asset_key,
+                "symbol": fav.get('symbol'),
+                "plataforma": fav.get('plataforma'),
+                "asset_data": fav.get('data')
+            }
+            result = supabase.table("favorites").insert(data).execute()
+        
         return bool(result.data)
     except Exception as e:
         import traceback
