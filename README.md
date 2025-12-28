@@ -10,8 +10,8 @@
 ## ✨ Funcionalidades
 
 - 🎯 **Scanner Multi-Plataforma**: DexScreener, Binance, Yahoo Finance
-- 🧠 **Análise com IA**: Gemini AI analisa e classifica oportunidades
-- ⭐ **Sistema de Favoritos**: Monitore ativos e receba alertas
+- 🧠 **Análise com IA**: Gemini 3-Flash analisa e classifica oportunidades
+- ⭐ **Monitor de Favoritos**: Isolamento por usuário via banco relacional
 - 📰 **Portal de Notícias**: Feeds em tempo real de crypto, ações e Brasil
 - 🔐 **Autenticação**: Login/cadastro com Supabase
 - 📱 **Alertas Telegram**: Notificações de compra/venda
@@ -50,7 +50,7 @@ streamlit run app.py --server.port 8502
 
 ## 📦 Estrutura do Projeto
 
-```
+```text
 markethunter/
 ├── MarketHunter/
 │   ├── app.py              # Dashboard principal
@@ -78,8 +78,8 @@ TELEGRAM_CHAT_ID=seu_chat_id
 
 ## 📊 Screenshots
 
-| Scanner | Favoritos | Notícias |
-|---------|-----------|----------|
+| Scanner               | Favoritos              | Notícias            |
+|-----------------------|------------------------|---------------------|
 | Análise IA automática | Monitoramento contínuo | Feeds em tempo real |
 
 ## 🛠 Tecnologias
