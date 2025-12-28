@@ -893,7 +893,9 @@ with tab2:
                 with col_info:
                     st.caption(f"📍 {plat} | Adicionado: {fav['added_at']}")
                     if "DexScreener" in plat:
-                        st.write(f"Liquidez: ${dados.get('liquidity',{}).get('usd',0):,.0f}")
+                        liq = dados.get('liquidity', 0)
+                        liq_value = liq.get('usd', 0) if isinstance(liq, dict) else (liq if liq else 0)
+                        st.write(f"Liquidez: ${liq_value:,.0f}")
                     else:
                         st.write(f"Preço: ${dados.get('price',0):,.4f}")
                 
