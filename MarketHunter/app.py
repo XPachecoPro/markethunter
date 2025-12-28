@@ -741,7 +741,10 @@ def mostrar_alertas_dinamicos():
 mostrar_alertas_dinamicos()
 
 # === TABS PRINCIPAIS ===
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎯 Scanner", "⭐ Favoritos", "📈 Ambiente", "🧮 Simulador", "🚨 Alertas", "📰 Notícias"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🎯 Scanner", "🔮 Gem Hunter", "⭐ Favoritos", "📈 Ambiente", 
+    "🧮 Simulador", "🚨 Alertas", "📰 Notícias"
+])
 
 # Scanner functions
 def buscar_dados_dexscreener(termo_busca, liq_min, f_max):
@@ -1232,9 +1235,183 @@ Seja preciso e técnico."""
         st.info("👆 Clique em 'Iniciar Scanner + Análise IA'")
 
 # ============================================================================
-# TAB 2: FAVORITOS
+# TAB 2: GEM HUNTER (Scanner Algorítmico Avançado)
 # ============================================================================
 with tab2:
+    st.title("🔮 Gem Hunter")
+    st.caption("Scanner algorítmico: Gems + Notícias + Score de Oportunidade")
+    
+    # Importa módulos
+    try:
+        from gem_scanner import scan_coingecko_gems
+        from news_hunter import fetch_crypto_news
+        from brain_analyzer import generate_opportunity_signals, format_signal_alert
+        modules_loaded = True
+    except ImportError as e:
+        st.error(f"❌ Erro ao carregar módulos: {e}")
+        modules_loaded = False
+    
+    if modules_loaded:
+        st.divider()
+        
+        # Filtros
+        col_filter1, col_filter2, col_filter3 = st.columns(3)
+        
+        with col_filter1:
+            max_mcap = st.number_input(
+                "💰 Market Cap Máx ($)", 
+                value=50_000_000, 
+                min_value=1_000_000, 
+                max_value=500_000_000,
+                step=5_000_000,
+                help="Moedas com market cap menor têm maior potencial de multiplicação"
+            )
+        
+        with col_filter2:
+            min_vol = st.number_input(
+                "📊 Volume Mín 24h ($)", 
+                value=500_000, 
+                min_value=100_000, 
+                max_value=10_000_000,
+                step=100_000,
+                help="Volume garante liquidez para entrada/saída"
+            )
+        
+        with col_filter3:
+            num_gems = st.slider("🔢 Quantidade", min_value=5, max_value=20, value=10)
+        
+        # Botão de scan
+        if st.button("🚀 Iniciar Gem Hunter", type="primary", use_container_width=True):
+            with st.spinner("🧠 Analisando mercado... (pode levar 30-60s)"):
+                try:
+                    # Gera sinais de oportunidade
+                    opportunities = generate_opportunity_signals(
+                        max_market_cap=max_mcap,
+                        min_volume=min_vol,
+                        gemini_api_key=api_key if api_key else None,
+                        limit=num_gems
+                    )
+                    
+                    st.session_state.gem_opportunities = opportunities
+                    
+                except Exception as e:
+                    st.error(f"❌ Erro no scanner: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+        
+        # Exibe resultados
+        if 'gem_opportunities' in st.session_state and st.session_state.gem_opportunities:
+            opportunities = st.session_state.gem_opportunities
+            
+            # Estatísticas
+            hot_count = sum(1 for o in opportunities if o['classification'] == 'HOT')
+            warm_count = sum(1 for o in opportunities if o['classification'] == 'WARM')
+            cold_count = len(opportunities) - hot_count - warm_count
+            
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            col_stat1.metric("🔮 Total", len(opportunities))
+            col_stat2.metric("🔥 HOT", hot_count)
+            col_stat3.metric("⚡ WARM", warm_count)
+            col_stat4.metric("❄️ COLD", cold_count)
+            
+            st.divider()
+            
+            for i, opp in enumerate(opportunities):
+                gem = opp.get('gem_data', {})
+                classification = opp['classification']
+                
+                # Estilo baseado na classificação
+                if classification == 'HOT':
+                    expander_icon = "🔥"
+                    expanded = True
+                elif classification == 'WARM':
+                    expander_icon = "⚡"
+                    expanded = False
+                else:
+                    expander_icon = "❄️"
+                    expanded = False
+                
+                with st.expander(
+                    f"{expander_icon} **{opp['symbol']}** | Score: {opp['total_score']}/{opp['max_score']} | {classification}",
+                    expanded=expanded
+                ):
+                    # Header com métricas
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("💰 Preço", f"${gem.get('price', 0):.6f}")
+                    col2.metric("📊 MCap", f"${gem.get('market_cap', 0)/1_000_000:.1f}M")
+                    col3.metric("📈 Vol 24h", f"${gem.get('volume_24h', 0)/1_000_000:.1f}M")
+                    col4.metric("🔄 Var 24h", f"{gem.get('price_change_24h', 0):+.1f}%")
+                    
+                    # Barra de score visual
+                    score_pct = (opp['total_score'] / opp['max_score']) * 100
+                    st.progress(min(1.0, score_pct / 100), text=f"Score: {opp['total_score']:.1f}/{opp['max_score']}")
+                    
+                    # Fatores
+                    if opp.get('explanations'):
+                        st.markdown("**📋 Fatores identificados:**")
+                        for exp in opp['explanations']:
+                            st.write(f"• {exp}")
+                    
+                    # Notícias relacionadas
+                    if opp.get('related_news'):
+                        st.markdown("**📰 Notícias relacionadas:**")
+                        for news in opp['related_news'][:3]:
+                            st.write(f"• [{news.get('title', '')[:60]}...]({news.get('url', '#')})")
+                    
+                    # Ação recomendada
+                    if classification == 'HOT':
+                        st.success(f"⚡ **Ação:** {opp['action']}")
+                    elif classification == 'WARM':
+                        st.warning(f"👀 **Ação:** {opp['action']}")
+                    else:
+                        st.info(f"💭 **Ação:** {opp['action']}")
+                    
+                    # Botões de ação
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        if st.button("⭐ Monitorar", key=f"gem_fav_{i}"):
+                            # Adiciona aos favoritos
+                            gem_fav = {
+                                'symbol': gem.get('symbol', ''),
+                                'name': gem.get('name', ''),
+                                'price': gem.get('price', 0),
+                                'market_cap': gem.get('market_cap', 0),
+                                'volume_24h': gem.get('volume_24h', 0)
+                            }
+                            adicionar_favorito(gem_fav, "Cripto (CoinGecko)")
+                            st.toast(f"⭐ {gem.get('symbol')} adicionado!")
+                    
+                    with col_b:
+                        # Link CoinGecko
+                        coin_id = gem.get('id', '')
+                        if coin_id:
+                            st.link_button("🔗 CoinGecko", f"https://www.coingecko.com/en/coins/{coin_id}")
+        else:
+            # Estado inicial
+            st.info("👆 Clique em 'Iniciar Gem Hunter' para buscar oportunidades")
+            
+            with st.expander("ℹ️ Como funciona o Gem Hunter"):
+                st.markdown("""
+**🔮 Módulo A: Gem Scanner**
+Busca moedas novas com Market Cap baixo e volume crescente via CoinGecko.
+
+**📰 Módulo B: News Hunter**  
+Monitora notícias de criptomoedas e detecta keywords de alto impacto.
+
+**🧠 Módulo C: The Brain**
+Cruza gems + notícias e calcula um Score de Oportunidade (0-20):
+
+| Score | Classificação | Ação |
+|-------|---------------|------|
+| 15-20 | 🔥 HOT | Alerta imediato |
+| 10-14 | ⚡ WARM | Monitorar |
+| 0-9 | ❄️ COLD | Observar |
+                """)
+
+# ============================================================================
+# TAB 3: FAVORITOS
+# ============================================================================
+with tab3:
     st.title("⭐ Favoritos Monitorados")
     
     if not st.session_state.favoritos:
@@ -1332,7 +1509,7 @@ chat_id = "SEU_CHAT_ID"
 # ============================================================================
 # TAB 3: AMBIENTE (Trading Dashboard)
 # ============================================================================
-with tab3:
+with tab4:
     st.title("📈 Ambiente de Trading")
     st.caption("Gráficos interativos e indicadores técnicos em tempo real")
     
@@ -1403,7 +1580,7 @@ with tab3:
 # ============================================================================
 # TAB 4: SIMULADOR INTELIGENTE
 # ============================================================================
-with tab4:
+with tab5:
     st.title("🧮 Simulador de Operações")
     
     if not st.session_state.favoritos:
@@ -1546,7 +1723,7 @@ Seja direto. Máximo 180 palavras.
 # ============================================================================
 # TAB 5: HISTÓRICO DE ALERTAS + DASHBOARD DE PERFORMANCE
 # ============================================================================
-with tab5:
+with tab6:
     st.title("🚨 Dashboard de Alertas")
     
     # Inicializa tracking de outcomes na session_state
@@ -1654,7 +1831,7 @@ with tab5:
 # ============================================================================
 # TAB 6: NOTÍCIAS
 # ============================================================================
-with tab6:
+with tab7:
     st.title("📰 Notícias")
     
     categoria = st.selectbox("📂 Categoria:", options=["crypto", "stocks", "brazil"],
