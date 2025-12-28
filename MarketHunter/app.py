@@ -10,6 +10,22 @@ import time
 import re
 from datetime import datetime, timedelta
 
+# ============ DIAGNÓSTICO DE SECRETS (remover em produção) ============
+def check_secrets_status():
+    """Verifica status das configurações de secrets"""
+    status = {}
+    try:
+        status['supabase_url'] = bool(st.secrets.get("supabase", {}).get("url"))
+        status['supabase_key'] = bool(st.secrets.get("supabase", {}).get("key"))
+        status['telegram_token'] = bool(st.secrets.get("telegram", {}).get("bot_token"))
+        status['gemini_key'] = bool(st.secrets.get("gemini", {}).get("api_key"))
+    except Exception as e:
+        status['error'] = str(e)
+    return status
+
+_SECRETS_STATUS = check_secrets_status()
+# ======================================================================
+
 # Cache de análises IA (evita chamadas redundantes)
 # Estrutura: { "symbol_platform": {"response": str, "forca": int, "timestamp": datetime} }
 if 'ia_cache' not in st.session_state:
@@ -59,11 +75,14 @@ try:
     )
 except Exception as e:
     _AUTH_IMPORT_ERROR = f"{type(e).__name__}: {str(e)}"
-    def cadastrar_usuario(*args): return False, f"Erro: {_AUTH_IMPORT_ERROR}"
-    def autenticar_usuario(*args): return False, None, f"Erro: {_AUTH_IMPORT_ERROR}"
+    # Gerar mensagem de diagnóstico
+    _diag = f"Secrets: supabase_url={_SECRETS_STATUS.get('supabase_url')}, supabase_key={_SECRETS_STATUS.get('supabase_key')}"
+    _full_error = f"🔴 AUTH FALHOU: {_AUTH_IMPORT_ERROR} | {_diag}"
+    def cadastrar_usuario(*args): return False, _full_error
+    def autenticar_usuario(*args): return False, None, _full_error
     def atualizar_usuario(*args): return False
     def buscar_favoritos_usuario(*args): return []
-    def adicionar_favorito_db(*args): return False, f"Erro: {_AUTH_IMPORT_ERROR}"
+    def adicionar_favorito_db(*args): return False, _full_error
     def remover_favorito_db(*args): return False
     def buscar_alertas_usuario(*args): return []
     def salvar_alerta_db(*args): return False
