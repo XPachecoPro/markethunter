@@ -5,14 +5,45 @@ import streamlit as st
 import requests
 import json
 import os
-import google.generativeai as genai
-import pandas as pd
-import ccxt
-import yfinance as yf
-import phonenumbers
 from datetime import datetime
-from news_fetcher import fetch_all_news, get_trending_topics
-from auth import cadastrar_usuario, autenticar_usuario
+
+# Imports com fallback para cloud
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+try:
+    import ccxt
+except ImportError:
+    ccxt = None
+
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
+try:
+    import phonenumbers
+except ImportError:
+    phonenumbers = None
+
+try:
+    from news_fetcher import fetch_all_news, get_trending_topics
+except ImportError:
+    def fetch_all_news(*args, **kwargs): return []
+    def get_trending_topics(*args, **kwargs): return []
+
+try:
+    from auth import cadastrar_usuario, autenticar_usuario
+except ImportError:
+    def cadastrar_usuario(*args): return False, "Módulo auth não disponível"
+    def autenticar_usuario(*args): return False, None, "Módulo auth não disponível"
 
 # Mapeamento de código de país para bandeira emoji
 COUNTRY_FLAGS = {
